@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+output/
+chrome_profiles/
+settings.json
+profiles/
+*.mp4
+*.docx
+.vscode/
+.idea/
+*.log
+ancient_humans_master_prompt.txt

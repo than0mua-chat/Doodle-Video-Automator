@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "Doodle Video Automator",
+  "version": "1.0",
+  "description": "Tự động hóa sinh ảnh trên Google ImageFX và đồng bộ về dự án Doodle Video",
+  "permissions": [
+    "activeTab",
+    "debugger",
+    "tabs"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "host_permissions": [
+    "http://127.0.0.1:8085/*",
+    "https://aitestkitchen.withgoogle.com/*",
+    "https://labs.google/*",
+    "https://*.labs.google/*",
+    "https://aistudio.google.com/*",
+    "https://gemini.google.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://aitestkitchen.withgoogle.com/tools/image-fx*",
+        "https://labs.google/*",
+        "https://*.labs.google/*",
+        "https://aistudio.google.com/*",
+        "https://gemini.google.com/*"
+      ],
+      "js": ["content.js"],
+      "css": ["style.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}

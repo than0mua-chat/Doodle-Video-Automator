@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hướng dẫn cài đặt ImageFX Automator Extension</title>
+    <!-- Google Fonts: Outfit -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --bg-darkest: #0a0c10;
+            --bg-darker: #0f121a;
+            --bg-card: rgba(255, 255, 255, 0.03);
+            --border-color: rgba(255, 255, 255, 0.06);
+            --text-primary: #f3f4f6;
+            --text-muted: #9ca3af;
+            --accent: #F58220;
+            --accent-glow: rgba(245, 130, 32, 0.25);
+            --success: #10b981;
+            --warning: #f59e0b;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg-darkest);
+            color: var(--text-primary);
+            line-height: 1.6;
+            padding: 40px 20px;
+            background-image: radial-gradient(circle at 10% 20%, rgba(245, 130, 32, 0.03) 0%, transparent 40%),
+                              radial-gradient(circle at 90% 80%, rgba(59, 130, 246, 0.03) 0%, transparent 50%);
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: var(--bg-darker);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 40px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.4);
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 40px;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 24px;
+        }
+
+        h1 {
+            font-size: 32px;
+            font-weight: 800;
+            margin-bottom: 8px;
+            background: linear-gradient(135deg, #fff 0%, var(--accent) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+        }
+
+        .subtitle {
+            color: var(--text-muted);
+            font-size: 16px;
+        }
+
+        h2 {
+            font-size: 20px;
+            font-weight: 700;
+            color: #fff;
+            margin: 32px 0 16px 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border-left: 4px solid var(--accent);
+            padding-left: 12px;
+        }
+
+        p {
+            margin-bottom: 16px;
+            color: var(--text-muted);
+        }
+
+        code {
+            font-family: 'JetBrains Mono', monospace;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 2px 6px;
+            border-radius: 4px;
+            color: #fff;
+            font-size: 90%;
+        }
+
+        ol, ul {
+            margin-left: 24px;
+            margin-bottom: 24px;
+            color: var(--text-muted);
+        }
+
+        li {
+            margin-bottom: 10px;
+        }
+
+        .highlight-box {
+            background: rgba(245, 130, 32, 0.03);
+            border: 1px solid rgba(245, 130, 32, 0.15);
+            border-radius: 10px;
+            padding: 20px;
+            margin: 24px 0;
+        }
+
+        .highlight-box h3 {
+            color: var(--accent);
+            font-size: 16px;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .highlight-box p {
+            margin-bottom: 0;
+            font-size: 13.5px;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 16px;
+            margin-top: 20px;
+        }
+
+        .btn {
+            background-color: var(--accent);
+            color: #fff;
+            padding: 12px 24px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 14px var(--accent-glow);
+        }
+
+        .btn:hover {
+            background-color: #fa9743;
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px var(--accent-glow);
+        }
+
+        .step-img-placeholder {
+            margin: 16px 0;
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px dashed var(--border-color);
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+            border-top: 1px solid var(--border-color);
+            padding-top: 20px;
+            font-size: 12px;
+            color: var(--text-tip);
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1><i class="fa-solid fa-robot"></i> ImageFX Automator</h1>
+        <p class="subtitle">Hướng dẫn cài đặt & vận hành Extension tự động hóa sinh ảnh</p>
+    </header>
+
+    <h2><i class="fa-solid fa-screwdriver-wrench"></i> BƯỚC 1: Cài đặt Extension vào Chrome</h2>
+    <p>Vì tiện ích này được thiết kế riêng cho máy tính của bạn và liên kết trực tiếp với Dashboard cục bộ, bạn cần cài đặt nó dưới dạng <strong>Developer Mode (Chế độ nhà phát triển)</strong>:</p>
+    
+    <ol>
+        <li>Mở trình duyệt Google Chrome (hoặc Edge, Brave, CocCoc).</li>
+        <li>Sao chép đường dẫn sau, dán vào thanh địa chỉ trình duyệt và nhấn Enter:
+            <br>
+            <code>chrome://extensions/</code>
+        </li>
+        <li>Ở góc trên bên phải của trang Quản lý Tiện ích, <strong>gạt công tắc để bật "Developer mode" (Chế độ nhà phát triển)</strong>.</li>
+        <li>Bấm vào nút <strong>"Load unpacked" (Tải tiện ích đã giải nén)</strong> vừa xuất hiện ở góc trên bên trái.</li>
+        <li>Tìm đến thư mục mã nguồn dự án của bạn và chọn đúng thư mục sau:
+            <br>
+            <code>D:\Youtube\extensions\imagefx_automator</code>
+        </li>
+        <li>Bấm nút <strong>Select Folder</strong> (Chọn thư mục).</li>
+    </ol>
+
+    <div class="highlight-box" style="background: rgba(16, 185, 129, 0.02); border-color: rgba(16, 185, 129, 0.15);">
+        <h3 style="color: var(--success);"><i class="fa-solid fa-circle-check"></i> Cài đặt thành công!</h3>
+        <p>Bạn sẽ thấy tiện ích <strong>Doodle Video Automator</strong> xuất hiện trên trang quản lý. Biểu tượng robot vẽ tranh nhỏ sẽ sẵn sàng đồng hành cùng bạn trên Google ImageFX.</p>
+    </div>
+
+    <h2><i class="fa-solid fa-circle-play"></i> BƯỚC 2: Sử dụng trên Google ImageFX</h2>
+    <ol>
+        <li>Đảm bảo Dashboard của bạn đang hoạt động tại địa chỉ <code>http://127.0.0.1:8085</code> và bạn đã mở dự án cần sinh ảnh trên Dashboard.</li>
+        <li>Mở trang web Google ImageFX bằng liên kết sau:
+            <div class="btn-group">
+                <a href="https://aitestkitchen.withgoogle.com/tools/image-fx" target="_blank" class="btn">
+                    <i class="fa-solid fa-external-link"></i> Mở Google ImageFX <i class="fa-solid fa-arrow-right"></i>
+                </a>
+            </div>
+        </li>
+        <li>Đăng nhập tài khoản Google của bạn trên ImageFX nếu được yêu cầu.</li>
+        <li>Ở góc trên bên phải màn hình ImageFX, bạn sẽ thấy một bảng điều khiển nổi màu đen bóng mờ <strong>"🎨 ImageFX Automator"</strong> xuất hiện.</li>
+        <li>Nhấn nút <strong>"Kết nối"</strong> để đồng bộ hóa với Dashboard. Tên dự án và danh sách tất cả prompts tạo ảnh sẽ tự động tải về bảng điều khiển.</li>
+    </ol>
+
+    <h2><i class="fa-solid fa-gears"></i> BƯỚC 3: Cách thức hoạt động sinh ảnh & Nút "Thử lại"</h2>
+    
+    <div class="highlight-box">
+        <h3><i class="fa-solid fa-bolt"></i> Tự động hóa 100% (Mặc định)</h3>
+        <p>Extension sẽ tự động điền prompt, bấm sinh ảnh, chờ đợi khi ảnh tạo xong, tự động kiểm tra đối khớp từ khóa ảnh, tải lên Dashboard, sau đó tự nhảy sang prompt tiếp theo cho đến khi tạo xong toàn bộ danh sách ảnh mà không cần bạn thao tác thêm.</p>
+    </div>
+
+    <div class="highlight-box" style="background: rgba(245, 158, 11, 0.05); border-color: rgba(245, 158, 11, 0.25);">
+        <h3 style="color: #f59e0b;"><i class="fa-solid fa-rotate-left"></i> Nút "Thử lại" (Retry)</h3>
+        <p>Nếu bạn thấy cụm ảnh vừa tạo cho prompt hiện tại bị lỗi hoặc không đẹp, bạn có thể nhấn nút <strong>"Thử lại"</strong> màu vàng trên bảng điều khiển. Hệ thống sẽ tự động tạm dừng chạy, xóa ảnh lỗi cũ trên server, gửi lại prompt để sinh mới cụm ảnh khác và tự động khôi phục chạy tiếp tục từ prompt đó.</p>
+    </div>
+
+    <h2><i class="fa-solid fa-circle-question"></i> Khắc phục sự cố thường gặp</h2>
+    <ul>
+        <li><strong>Không kết nối được với Dashboard:</strong> Đảm bảo rằng tab Dashboard vẫn đang mở và server <code>dashboard.py</code> đang hoạt động tại cổng <code>8085</code>.</li>
+        <li><strong>ImageFX báo giới hạn hoặc lỗi sinh ảnh:</strong> Google ImageFX có thể giới hạn tần suất tạo ảnh nhanh. Nếu xảy ra lỗi, nhấn nút <strong>"Dừng"</strong> trên Extension, chờ 1-2 phút hoặc giải quyết CAPTCHA của Google, sau đó nhấn <strong>"Bắt đầu chạy"</strong> lại.</li>
+        <li><strong>Ảnh lưu ở đâu trên máy tính?</strong> Toàn bộ ảnh sẽ được tải trực tiếp về thư mục của dự án: <code>D:\Youtube\output\&lt;tên_dự_án&gt;\images\</code> dưới dạng các file <code>0.png</code>, <code>1.png</code>... mà bạn không cần tải thủ công và đổi tên.</li>
+    </ul>
+
+    <h2><i class="fa-solid fa-brain"></i> BƯỚC 4: Tự động hóa qua Google AI Studio hoặc Google Gemini Web</h2>
+    <p>Nếu bạn chưa có API Key của Gemini hoặc muốn sử dụng giao diện web miễn phí của <strong>Google AI Studio</strong> (aistudio.google.com) hoặc <strong>Google Gemini Web</strong> (gemini.google.com) để sinh kịch bản/nội dung tự động, tiện ích hỗ trợ cơ chế chạy tự động hoàn toàn như sau:</p>
+    <ol>
+        <li>Mở một trong hai trang web bằng liên kết dưới đây:
+            <div class="btn-group" style="margin-top: 8px; gap: 10px; display: flex;">
+                <a href="https://aistudio.google.com" target="_blank" class="btn" style="background: var(--accent);">
+                    <i class="fa-solid fa-arrow-up-right-from-square"></i> Mở Google AI Studio
+                </a>
+                <a href="https://gemini.google.com" target="_blank" class="btn" style="background: #1e3a8a;">
+                    <i class="fa-solid fa-arrow-up-right-from-square"></i> Mở Google Gemini Web
+                </a>
+            </div>
+        </li>
+        <li>Đăng nhập tài khoản Google của bạn.</li>
+        <li>Ở góc trên bên phải màn hình, bạn sẽ thấy bảng điều khiển nổi màu đen mang tên <strong>"🤖 Gemini Web Automator"</strong> (hoặc "AI Studio Automator").</li>
+        <li>Điền địa chỉ host Dashboard của bạn (mặc định: <code>http://127.0.0.1:8085</code>) và nhấn nút <strong>"Kết nối"</strong>.</li>
+        <li>Bấm nút <strong>"Bắt đầu chạy"</strong>. Bảng điều khiển sẽ chuyển sang trạng thái nhấp nháy màu cam và bắt đầu lắng nghe hàng đợi từ Dashboard.</li>
+        <li>Quay lại Dashboard của bạn, chọn dự án và bấm chạy các Giai đoạn cần gọi AI (như Giai đoạn 2 để viết kịch bản hoặc Giai đoạn 4 để tạo prompt). Hệ thống sẽ tự động chuyển yêu cầu sang tab đang mở của bạn, điền prompt, gửi yêu cầu, chờ kết quả và gửi ngược lại về Dashboard để lưu kịch bản một cách tự động 100%!</li>
+    </ol>
+
+    <div class="footer">
+        Doodle Video Automator — Advanced Agentic Coding by Antigravity
+    </div>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Doodle Video Automator</title>
+    <!-- Google Fonts: Outfit -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome for beautiful icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+
+    <!-- APP WRAPPER -->
+    <div class="app-container">
+        
+        <!-- SIDEBAR -->
+        <aside class="sidebar">
+            <div class="sidebar-brand">
+                <i class="fa-solid fa-clapperboard logo-icon"></i>
+                <div class="brand-text">
+                    <h1>Doodle Video</h1>
+                    <span>Video Automator</span>
+                </div>
+            </div>
+            
+            <div class="channel-profile-selector-container">
+                <label for="profile-select-dropdown"><i class="fa-solid fa-dna text-accent"></i> Kênh DNA</label>
+                <div class="dropdown-wrapper">
+                    <select id="profile-select-dropdown" class="profile-dropdown">
+                        <!-- Nạp động -->
+                    </select>
+                    <button class="btn-icon" id="btn-manage-profiles" title="Quản lý hồ sơ Kênh DNA">
+                        <i class="fa-solid fa-gear"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <nav class="sidebar-menu">
+                <a href="#" class="menu-item active" data-tab="projects-tab">
+                    <i class="fa-solid fa-folder-open"></i>
+                    <span>Dự án của tôi</span>
+                </a>
+                <a href="#" class="menu-item" data-tab="config-tab">
+                    <i class="fa-solid fa-sliders"></i>
+                    <span>Cấu hình hệ thống</span>
+                </a>
+                <a href="#" class="menu-item" data-tab="dna-tab">
+                    <i class="fa-solid fa-dna"></i>
+                    <span>Visual DNA</span>
+                </a>
+            </nav>
+            
+            <div class="sidebar-status">
+                <div class="status-title">Kết nối API</div>
+                <div class="status-item" id="gemini-api-status">
+                    <span class="status-indicator yellow"></span>
+                    <span>Gemini API Key</span>
+                </div>
+                <div class="status-item" id="tts-api-status">
+                    <span class="status-indicator yellow"></span>
+                    <span>TTS Engine</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- MAIN WORKSPACE -->
+        <main class="main-content">
+            
+            <!-- SECTION 1: PROJECTS TAB -->
+            <section id="projects-tab" class="tab-panel active">
+                <div class="tab-header">
+                    <div>
+                        <h2>Dự án sản xuất</h2>
+                        <p class="subtitle">Quản lý và theo dõi tiến độ các dự án hoạt hình của bạn</p>
+                    </div>
+                    <button class="btn btn-primary" id="btn-new-project">
+                        <i class="fa-solid fa-plus"></i> Tạo dự án mới
+                    </button>
+                </div>
+                
+                <!-- Project Grid -->
+                <div class="projects-grid" id="projects-list-container">
+                    <!-- Dynamic rendering by JS -->
+                    <div class="loading-state">
+                        <i class="fa-solid fa-circle-notch fa-spin text-accent"></i>
+                        <p>Đang tải danh sách dự án...</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SECTION 2: CONFIGURATION TAB -->
+            <section id="config-tab" class="tab-panel">
+                <div class="tab-header">
+                    <div>
+                        <h2>Cấu hình hệ thống</h2>
+                        <p class="subtitle">Quản lý API Keys, chất lượng giọng đọc, và cấu hình dựng video</p>
+                    </div>
+                    <button class="btn btn-primary" id="btn-save-config">
+                        <i class="fa-solid fa-floppy-disk"></i> Lưu cấu hình
+                    </button>
+                </div>
+                
+                <div class="config-grid">
+                    <!-- Col 1: API Keys & Engines -->
+                    <div class="glass-card">
+                        <div class="card-header">
+                            <i class="fa-solid fa-key card-icon"></i>
+                            <h3>API Keys & Động cơ</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="form-group">
+                                <label for="cfg-gemini-key">Gemini API Key</label>
+                                <input type="password" id="cfg-gemini-key" placeholder="Nhập Gemini API Key của bạn...">
+                                <span class="input-tip">Lấy API Key miễn phí tại <a href="https://aistudio.google.com/apikey" target="_blank">Google AI Studio</a>.</span>
+                            </div>
+                            <div class="form-group">
+                                <label for="cfg-elevenlabs-key">ElevenLabs API Key (Tùy chọn)</label>
+                                <input type="password" id="cfg-elevenlabs-key" placeholder="Nhập ElevenLabs API Key nếu dùng giọng đọc ElevenLabs...">
+                            </div>
+                            <div class="form-group">
+                                <label for="cfg-tts-engine">Động cơ giọng đọc (TTS Engine)</label>
+                                <select id="cfg-tts-engine">
+                                    <option value="edge-tts">Edge-TTS (Miễn phí, rất tốt)</option>
+                                    <option value="elevenlabs">ElevenLabs (Trả phí, chất lượng cao nhất)</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="cfg-image-mode">Phương thức tạo ảnh (Image Generation Mode)</label>
+                                <select id="cfg-image-mode">
+                                    <option value="export">Export Prompts (Tải ảnh thủ công qua ImageFX - Tối ưu nhất)</option>
+                                    <option value="api">API Generation (Tự động sinh ảnh qua Gemini Imagen API)</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Col 2: Voice Settings -->
+                    <div class="glass-card">
+                        <div class="card-header">
+                            <i class="fa-solid fa-volume-high card-icon"></i>
+                            <h3>Cấu hình Giọng nói & Mô hình</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="form-group">
+                                <label for="cfg-edge-voice">Edge-TTS Voice</label>
+                                <input type="text" id="cfg-edge-voice" placeholder="Vd: en-US-AndrewNeural">
+                                <span class="input-tip">Vd: <code>en-US-AndrewNeural</code>, <code>en-US-BrianNeural</code>, <code>vi-VN-HoaiMyNeural</code>.</span>
+                            </div>
+                            <div class="form-group">
+                                <label for="cfg-elevenlabs-voice">ElevenLabs Voice ID</label>
+                                <input type="text" id="cfg-elevenlabs-voice" placeholder="Vd: pNInz6obpgDQGcFmaJgB">
+                            </div>
+                            <div class="form-group">
+                                <label for="cfg-elevenlabs-model">ElevenLabs Model ID</label>
+                                <input type="text" id="cfg-elevenlabs-model" placeholder="Vd: eleven_multilingual_v2">
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group col-6">
+                                    <label for="cfg-script-model">Mô hình kịch bản</label>
+                                    <input type="text" id="cfg-script-model" placeholder="Vd: gemini-2.5-flash">
+                                </div>
+                                <div class="form-group col-6">
+                                    <label for="cfg-prompt-model">Mô hình prompts</label>
+                                    <input type="text" id="cfg-prompt-model" placeholder="Vd: gemini-2.5-flash">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Col 3: Video Compiler Settings -->
+                    <div class="glass-card full-width">
+                        <div class="card-header">
+                            <i class="fa-solid fa-film card-icon"></i>
+                            <h3>Thông số Video thành phẩm</h3>
+                        </div>
+                        <div class="card-body form-row">
+                            <div class="form-group col-3">
+                                <label for="cfg-video-width">Chiều rộng (Width)</label>
+                                <input type="number" id="cfg-video-width" value="1920">
+                            </div>
+                            <div class="form-group col-3">
+                                <label for="cfg-video-height">Chiều cao (Height)</label>
+                                <input type="number" id="cfg-video-height" value="1080">
+                            </div>
+                            <div class="form-group col-3">
+                                <label for="cfg-video-fps">FPS (Khung hình/giây)</label>
+                                <input type="number" id="cfg-video-fps" value="24">
+                            </div>
+                            <div class="form-group col-3">
+                                <label for="cfg-wobble">Cường độ rung (Wobble px)</label>
+                                <input type="number" id="cfg-wobble" value="3">
+                                <span class="input-tip">0 = Tắt hiệu ứng hoạt hình rung lắc.</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SECTION 3: VISUAL DNA TAB -->
+            <section id="dna-tab" class="tab-panel">
+                <div class="tab-header">
+                    <div>
+                        <h2>Visual DNA & Prompting Guides</h2>
+                        <p class="subtitle">Định hình phong cách kịch bản và nghệ thuật hoạt hình cho kênh</p>
+                    </div>
+                    <button class="btn btn-primary" id="btn-save-dna">
+                        <i class="fa-solid fa-floppy-disk"></i> Lưu thay đổi
+                    </button>
+                </div>
+                
+                <div class="dna-container">
+                    <div class="glass-card">
+                        <div class="card-header">
+                            <i class="fa-solid fa-brain card-icon"></i>
+                            <h3>Kịch bản DNA (Channel Knowledge Base)</h3>
+                        </div>
+                        <div class="card-body">
+                            <textarea id="cfg-channel-kb" rows="8" class="prompt-textarea"></textarea>
+                        </div>
+                    </div>
+
+                    <div class="glass-card">
+                        <div class="card-header">
+                            <i class="fa-solid fa-palette card-icon"></i>
+                            <h3>Phong cách hình ảnh (Visual Style DNA)</h3>
+                        </div>
+                        <div class="card-body">
+                            <textarea id="cfg-visual-dna" rows="8" class="prompt-textarea"></textarea>
+                        </div>
+                    </div>
+
+                    <div class="glass-card">
+                        <div class="card-header">
+                            <i class="fa-solid fa-anchor card-icon"></i>
+                            <h3>Style Anchor (Tiền tố prompt)</h3>
+                        </div>
+                        <div class="card-body">
+                            <input type="text" id="cfg-style-anchor" class="prompt-input">
+                        </div>
+                    </div>
+
+                    <div class="glass-card">
+                        <div class="card-header">
+                            <i class="fa-solid fa-lock card-icon"></i>
+                            <h3>Style Lock (Hậu tố phủ định)</h3>
+                        </div>
+                        <div class="card-body">
+                            <input type="text" id="cfg-style-lock" class="prompt-input">
+                        </div>
+                    </div>
+
+                    <div class="glass-card full-width">
+                        <div class="card-header">
+                            <i class="fa-solid fa-wand-magic-sparkles card-icon"></i>
+                            <h3>Góc khai thác chủ đề thịnh hành (Proven Viral Topic Angles)</h3>
+                        </div>
+                        <div class="card-body">
+                            <textarea id="cfg-viral-angles" rows="6" class="prompt-textarea"></textarea>
+                        </div>
+                    </div>
+
+                    <div class="glass-card full-width">
+                        <div class="card-header">
+                            <i class="fa-solid fa-list-check card-icon"></i>
+                            <h3>Đề xuất 5 kịch bản & Đánh giá (PROPOSED_IDEAS)</h3>
+                        </div>
+                        <div class="card-body">
+                            <textarea id="cfg-proposed-ideas" rows="10" class="prompt-textarea"></textarea>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SECTION 4: PROJECT WORKSPACE VIEW (SPLIT SCREEN) -->
+            <section id="workspace-view" class="workspace-panel">
+                <div class="workspace-header">
+                    <button class="btn btn-secondary btn-icon" id="btn-workspace-back">
+                        <i class="fa-solid fa-chevron-left"></i> Quay lại
+                    </button>
+                    <div class="workspace-title-area">
+                        <h2 id="ws-project-title">Tên dự án mẫu</h2>
+                        <div class="project-meta-badges">
+                            <span class="badge" id="ws-project-size">0.0 MB</span>
+                            <span class="badge badge-accent" id="ws-project-engine">Edge-TTS</span>
+                            <span class="badge badge-info" id="ws-project-img-mode">Export</span>
+                        </div>
+                    </div>
+                    <div>
+                        <button class="btn btn-danger btn-icon" id="btn-delete-project" title="Xóa hoàn toàn dự án">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Pipeline Steps Tracker -->
+                <div class="pipeline-tracker">
+                    <div class="step-node active" data-step="2">
+                        <span class="step-num">2</span>
+                        <span class="step-name">Kịch bản</span>
+                    </div>
+                    <div class="step-line"></div>
+                    <div class="step-node" data-step="3">
+                        <span class="step-num">3</span>
+                        <span class="step-name">Giọng nói</span>
+                    </div>
+                    <div class="step-line"></div>
+                    <div class="step-node" data-step="4">
+                        <span class="step-num">4</span>
+                        <span class="step-name">Prompts</span>
+                    </div>
+                    <div class="step-line"></div>
+                    <div class="step-node" data-step="5">
+                        <span class="step-num">5</span>
+                        <span class="step-name">Hình ảnh</span>
+                    </div>
+                    <div class="step-line"></div>
+                    <div class="step-node" data-step="6">
+                        <span class="step-num">6</span>
+                        <span class="step-name">Dựng video</span>
+                    </div>
+                </div>
+
+                <!-- Workspace Body Split -->
+                <div class="workspace-body">
+                    
+                    <!-- Left: Control & Logs Console -->
+                    <div class="workspace-left">
+                        <div class="panel-section-title">Bảng điều khiển & log tiến độ</div>
+                        
+                        <div class="action-card glass-card">
+                            <div class="stage-info">
+                                <h4 id="ws-stage-title">Giai đoạn hiện tại</h4>
+                                <p id="ws-stage-desc">Đang tải thông tin...</p>
+                            </div>
+                            
+                            <div class="action-buttons-group">
+                                <button class="btn btn-accent btn-full" id="btn-run-current-stage">
+                                    <i class="fa-solid fa-circle-play"></i> Bắt đầu chạy giai đoạn này
+                                </button>
+                                <div class="action-buttons-row">
+                                    <button class="btn btn-secondary col-6" id="btn-run-stage-dropdown-btn">
+                                        <i class="fa-solid fa-list-check"></i> Chọn chạy bước...
+                                    </button>
+                                    <button class="btn btn-secondary col-6" id="btn-stop-pipeline" disabled>
+                                        <i class="fa-solid fa-circle-stop"></i> Dừng
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <!-- Run Stage Dropdown menu (hidden by default) -->
+                            <div id="stage-picker-dropdown" class="stage-picker-dropdown hidden">
+                                <div class="dropdown-item" data-run-stage="2"><i class="fa-solid fa-file-signature text-orange"></i> Chạy lại Giai đoạn 2: Viết kịch bản</div>
+                                <div class="dropdown-item" data-run-stage="3"><i class="fa-solid fa-volume-high text-orange"></i> Chạy lại Giai đoạn 3: Tạo giọng đọc & Timing</div>
+                                <div class="dropdown-item" data-run-stage="4"><i class="fa-solid fa-wand-magic-sparkles text-orange"></i> Chạy Giai đoạn 4: Tạo prompts ảnh</div>
+                                <div class="dropdown-item" data-run-stage="5"><i class="fa-solid fa-images text-orange"></i> Chạy Giai đoạn 5: Tải/Tạo ảnh</div>
+                                <div class="dropdown-item" data-run-stage="6"><i class="fa-solid fa-film text-orange"></i> Chạy Giai đoạn 6: Dựng video</div>
+                            </div>
+                        </div>
+
+                        <!-- Console log window -->
+                        <div class="console-card glass-card">
+                            <div class="console-header">
+                                <span class="console-dot red"></span>
+                                <span class="console-dot yellow"></span>
+                                <span class="console-dot green"></span>
+                                <span class="console-title">Console Output</span>
+                                <span class="run-spinner hidden" id="console-spinner">
+                                    <i class="fa-solid fa-spinner fa-spin"></i>
+                                </span>
+                            </div>
+                            <div class="console-body" id="console-log-box">
+                                <!-- Log logs stream in here -->
+                                [Hệ thống] Chọn một giai đoạn và bấm chạy để bắt đầu.
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right: Dynamic Workspace Area -->
+                    <div class="workspace-right">
+                        
+                        <!-- Stage 2 Area: Script Edit -->
+                        <div class="stage-view-container active" id="stage-view-2">
+                            <div class="view-header">
+                                <h3><i class="fa-solid fa-file-lines text-accent"></i> Kịch bản narration (script.txt)</h3>
+                                <button class="btn btn-secondary btn-small" id="btn-save-script">
+                                    <i class="fa-solid fa-floppy-disk"></i> Lưu kịch bản
+                                </button>
+                            </div>
+                            <div class="view-body">
+                                <p class="help-text">Bạn có thể sửa trực tiếp kịch bản thoại dưới đây. Gemini sẽ viết bằng ngôi thứ 2 và không chứa hướng dẫn âm nhạc/tiêu đề để thuận tiện chuyển sang TTS.</p>
+                                <textarea id="ws-script-editor" rows="22" class="script-editor-textarea" placeholder="Chưa có kịch bản. Chạy Giai đoạn 2 để tạo tự động..."></textarea>
+                            </div>
+                        </div>
+
+                        <!-- Stage 3 Area: Audio & Timing -->
+                        <div class="stage-view-container" id="stage-view-3">
+                            <div class="view-header">
+                                <h3><i class="fa-solid fa-circle-nodes text-accent"></i> Mốc thời gian câu thoại (timing.json)</h3>
+                            </div>
+                            <div class="view-body">
+                                <div class="audio-player-card glass-card" id="ws-audio-player-container">
+                                    <!-- Dynamic HTML5 audio player -->
+                                    <p class="no-audio-text"><i class="fa-solid fa-volume-xmark"></i> Chưa có file giọng đọc voice.mp3</p>
+                                </div>
+                                <div class="timing-list-container">
+                                    <table class="timing-table">
+                                        <thead>
+                                            <tr>
+                                                <th style="width: 50px;">Stt</th>
+                                                <th style="width: 80px;">Thời gian</th>
+                                                <th>Văn bản thoại câu</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="ws-timing-table-body">
+                                            <tr>
+                                                <td colspan="3" class="text-center">Chưa có dữ liệu timing. Hãy chạy Giai đoạn 3 để tạo giọng nói & mốc thời gian.</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Stage 4 Area: Prompts Edit -->
+                        <div class="stage-view-container" id="stage-view-4">
+                            <div class="view-header">
+                                <h3><i class="fa-solid fa-wand-magic-sparkles text-accent"></i> Danh sách Prompt hình ảnh</h3>
+                                <button class="btn btn-secondary btn-small" id="btn-save-prompts">
+                                    <i class="fa-solid fa-floppy-disk"></i> Lưu danh sách prompt
+                                </button>
+                            </div>
+                            <div class="view-body">
+                                <p class="help-text">Dưới đây là prompts tạo ảnh chi tiết do Gemini tạo ra cho mỗi câu. Bạn có thể sửa đổi chúng trước khi tải ảnh.</p>
+                                <div class="prompts-list-container" id="ws-prompts-editor-list">
+                                    <!-- Dynamic fields render -->
+                                    <p class="text-center">Chưa có dữ liệu prompts. Hãy chạy Giai đoạn 4 để sinh tự động.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Stage 5 Area: Image Grid & Upload -->
+                        <div class="stage-view-container" id="stage-view-5">
+                            <div class="view-header">
+                                <h3><i class="fa-solid fa-images text-accent"></i> Thư viện hình ảnh dự án (images/)</h3>
+                                <div class="image-mode-badge" id="ws-img-mode-badge-right">Chế độ: Export</div>
+                            </div>
+                            <div class="view-body">
+                                <!-- Cấu hình sinh ảnh -->
+                                <div class="glass-card" style="margin-bottom: 20px; border-left: 4px solid var(--info); background-color: rgba(59, 130, 246, 0.02) !important;">
+                                    <h4 style="color: var(--info); margin-bottom: 12px; font-size: 14.5px;"><i class="fa-solid fa-sliders"></i> Cấu hình sinh ảnh dự án</h4>
+                                    <div class="form-row" style="margin-bottom: 12px; display: flex; gap: 16px;">
+                                        <div class="form-group col-6" style="margin-bottom: 0; flex: 1;">
+                                            <label for="cfg-img-mode-select" style="font-size: 12px;">Chế độ tạo ảnh</label>
+                                            <select id="cfg-img-mode-select" class="profile-dropdown" style="width: 100%; margin-top: 4px; padding: 8px;">
+                                                <option value="export">Export (Tự động hóa qua Extension)</option>
+                                                <option value="api">API (Tự động sinh bằng Imagen API)</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group col-6" style="margin-bottom: 0; flex: 1;">
+                                            <label for="cfg-img-profile-select" style="font-size: 12px;">Hồ sơ kênh DNA</label>
+                                            <select id="cfg-img-profile-select" class="profile-dropdown" style="width: 100%; margin-top: 4px; padding: 8px;">
+                                                <!-- Profiles loaded dynamically -->
+                                            </select>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Chọn Profile Chrome & Mở Trình duyệt -->
+                                    <div class="form-row" id="chrome-profile-config-row" style="margin-top: 12px; margin-bottom: 12px; display: flex; gap: 16px; align-items: flex-end;">
+                                        <div class="form-group col-6" style="margin-bottom: 0; flex: 1;">
+                                            <label for="cfg-chrome-profile-select" style="font-size: 12px;"><i class="fa-brands fa-chrome text-info"></i> Chọn Profile Chrome để tạo ảnh</label>
+                                            <select id="cfg-chrome-profile-select" class="profile-dropdown" style="width: 100%; margin-top: 4px; padding: 8px;">
+                                                <option value="Default">Default</option>
+                                            </select>
+                                        </div>
+                                        <div style="flex: 1; display: flex; gap: 8px;">
+                                            <button class="btn btn-secondary btn-full" id="btn-open-chrome" style="height: 38px; justify-content: center; gap: 8px; flex: 1;">
+                                                <i class="fa-solid fa-up-right-from-square"></i> Mở ImageFX
+                                            </button>
+                                            <button class="btn btn-success" id="btn-create-chrome-profile" style="height: 38px; justify-content: center; gap: 8px; font-size: 13px; padding: 0 12px; display: inline-flex; align-items: center; white-space: nowrap;">
+                                                <i class="fa-solid fa-plus"></i> Tạo Profile Mới
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 15px; border-top: 1px solid var(--border-color); padding-top: 15px;">
+                                        <button class="btn btn-primary btn-small" id="btn-save-img-config">
+                                            <i class="fa-solid fa-floppy-disk"></i> Lưu cấu hình ảnh
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- Mode manual / ImageFX instruction panel -->
+                                <div class="instruction-box glass-card" id="imagefx-instructions" style="border-left: 4px solid var(--accent); background-color: rgba(245, 130, 32, 0.05) !important;">
+                                    <h4 style="color: var(--accent);"><i class="fa-solid fa-robot text-orange"></i> Tự động hóa sinh ảnh bằng Chrome Extension (Khuyên dùng):</h4>
+                                    <p style="font-size: 13px; margin: 8px 0; color: var(--text-primary); line-height: 1.4;">
+                                        Chúng tôi đã tạo riêng một <strong>Chrome Extension</strong> nằm trong mã nguồn của bạn để tự động hóa 100% việc nhập prompt và tải ảnh từ Google ImageFX về máy tính.
+                                    </p>
+                                    <div style="margin-bottom: 12px; font-size: 12.5px; line-height: 1.4; color: var(--text-muted);">
+                                        <strong>Cài đặt nhanh:</strong> Mở tab mới <code>chrome://extensions/</code> → Bật <strong>Chế độ nhà phát triển (Developer mode)</strong> → Bấm <strong>Tải tiện ích đã giải nén (Load unpacked)</strong> → Chọn thư mục: <code>D:\Youtube\extensions\imagefx_automator</code>.
+                                    </div>
+                                    <div style="margin-bottom: 15px;">
+                                        <a href="/static/instructions.html" target="_blank" class="btn btn-primary btn-small">
+                                            <i class="fa-solid fa-book-open"></i> Xem chi tiết hướng dẫn cài đặt & sử dụng
+                                        </a>
+                                    </div>
+                                    <h4 style="margin-top: 15px; font-size: 13.5px;"><i class="fa-solid fa-keyboard text-orange"></i> Hoặc làm thủ công:</h4>
+                                    <ol style="margin-left: 20px; font-size: 12.5px; line-height: 1.4; color: var(--text-muted);">
+                                        <li>Bấm nút sao chép prompt bên cạnh ô ảnh trống.</li>
+                                        <li>Mở <a href="https://aitestkitchen.withgoogle.com/tools/image-fx" target="_blank" class="text-accent link-underline">Google ImageFX <i class="fa-solid fa-external-link"></i></a> và dán prompt.</li>
+                                        <li>Kéo thả ảnh tải về vào đúng ô tương ứng bên dưới.</li>
+                                    </ol>
+                                </div>
+
+                                <div class="images-grid-container" id="ws-images-grid">
+                                    <!-- Render images or upload targets -->
+                                    <p class="text-center">Chưa có thông tin prompts. Vui lòng hoàn thành bước 4 trước.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Stage 6 Area: Final Video -->
+                        <div class="stage-view-container" id="stage-view-6">
+                            <div class="view-header">
+                                <h3><i class="fa-solid fa-film text-accent"></i> Video thành phẩm (final_video.mp4)</h3>
+                            </div>
+                            <div class="view-body text-center">
+                                <div class="video-preview-wrapper" id="ws-video-player-container">
+                                    <div class="video-placeholder">
+                                        <i class="fa-solid fa-video-slash"></i>
+                                        <p>Chưa dựng video final_video.mp4. Hãy chạy Giai đoạn 6 ở bảng bên trái.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <!-- MODAL 1: NEW PROJECT -->
+    <div class="modal" id="modal-new-project">
+        <div class="modal-content glass-card">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-folder-plus text-accent"></i> Khởi tạo dự án video mới</h3>
+                <button class="modal-close" id="modal-close-new-project">&times;</button>
+            </div>
+            <div class="modal-body">
+                
+                <!-- Project Language Selector -->
+                <div class="form-group" style="margin-bottom: 16px;">
+                    <label for="project-language-select" style="font-weight: 500;"><i class="fa-solid fa-language text-accent"></i> Ngôn ngữ dự án (Kịch bản & Ý tưởng)</label>
+                    <select id="project-language-select" class="profile-dropdown" style="width: 100%; margin-top: 4px; padding: 8px; border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-primary); border-radius: 6px;">
+                        <option value="vi">Tiếng Việt (Vietnamese)</option>
+                        <option value="en">Tiếng Anh (English)</option>
+                    </select>
+                </div>
+
+                <!-- Toggle Mode: Manual title vs AI Suggestion -->
+                <div class="modal-toggle-buttons">
+                    <button class="toggle-btn active" id="mode-manual-btn">Nhập tay chủ đề</button>
+                    <button class="toggle-btn" id="mode-ai-btn">Gemini gợi ý chủ đề (Stage 1)</button>
+                </div>
+
+                <!-- Mode 1: Manual Input form -->
+                <div id="new-project-manual-form" class="modal-form-section active">
+                    <div class="form-group">
+                        <label for="project-title-input">Ý tưởng / Chủ đề video</label>
+                        <input type="text" id="project-title-input" placeholder="Vd: How Ancient Humans Slept" required>
+                        <span class="input-tip">Chủ đề nên viết bằng tiếng Anh để Gemini sinh kịch bản tiếng Anh tối ưu nhất.</span>
+                    </div>
+                    <div class="form-group">
+                        <label for="project-folder-input">Tên thư mục (Tùy chọn)</label>
+                        <input type="text" id="project-folder-input" placeholder="Vd: how_ancient_humans_slept">
+                        <span class="input-tip">Để trống nếu muốn hệ thống tự chuyển đổi tên.</span>
+                    </div>
+                </div>
+
+                <!-- Mode 2: AI Suggestions list -->
+                <div id="new-project-ai-form" class="modal-form-section">
+                    <button class="btn btn-secondary btn-full margin-bottom" id="btn-generate-ai-topics">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i> Kết nối Gemini sinh 5 chủ đề viral
+                    </button>
+                    
+                    <div class="ai-topics-list hidden" id="ai-topics-list-container">
+                        <!-- Rendered by JS -->
+                    </div>
+                    
+                    <div id="ai-topics-loading" class="loading-state hidden">
+                        <i class="fa-solid fa-circle-notch fa-spin text-accent"></i>
+                        <p>Gemini đang lên ý tưởng và nghiên cứu xu hướng viral...</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="modal-cancel-new-project">Hủy bỏ</button>
+                <button class="btn btn-primary" id="btn-submit-new-project">Tạo dự án</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 2: MANAGE PROFILES -->
+    <div class="modal" id="modal-manage-profiles">
+        <div class="modal-content glass-card wide">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-dna text-accent"></i> Quản lý Hồ sơ Kênh DNA</h3>
+                <button class="modal-close" id="modal-close-manage-profiles">&times;</button>
+            </div>
+            <div class="modal-body">
+                <!-- Toggle Mode: List/Edit vs Create Dynamic Niche Profile -->
+                <div class="modal-toggle-buttons">
+                    <button class="toggle-btn active" id="profile-mode-list-btn">Danh sách & Chỉnh sửa</button>
+                    <button class="toggle-btn" id="profile-mode-ai-btn">Tạo Kênh mới bằng AI</button>
+                </div>
+
+                <!-- Section 1: List & Edit Profiles -->
+                <div id="profile-list-edit-section" class="modal-form-section active">
+                    <div class="profile-list-group" id="profiles-list-container">
+                        <!-- Rendered by JS -->
+                    </div>
+                    
+                    <hr class="divider" style="margin: 16px 0; border: none; border-top: 1px solid var(--border-color);" />
+                    
+                    <h4 style="margin-bottom: 12px;"><i class="fa-solid fa-pen-to-square text-accent"></i> Chỉnh sửa cấu hình DNA chi tiết</h4>
+                    <div class="form-row">
+                        <div class="form-group col-6">
+                            <label for="profile-edit-name">Tên Kênh</label>
+                            <input type="text" id="profile-edit-name" placeholder="Vd: Lịch sử Cổ đại">
+                        </div>
+                        <div class="form-group col-6">
+                            <label for="profile-edit-desc">Mô tả ngách</label>
+                            <input type="text" id="profile-edit-desc" placeholder="Vd: Chuyện sinh tồn thời tiền sử">
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="profile-edit-kb">Kịch bản DNA (CHANNEL_KNOWLEDGE_BASE)</label>
+                        <textarea id="profile-edit-kb" class="textarea-dna" placeholder="Định dạng cấu trúc viết kịch bản..."></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="profile-edit-visual">Hình ảnh DNA (VISUAL_STYLE_DNA)</label>
+                        <textarea id="profile-edit-visual" class="textarea-dna" placeholder="Mô tả phong cách vẽ tranh, nhân vật chính, background..."></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="profile-edit-ideas">Đề xuất 5 kịch bản & Đánh giá (PROPOSED_IDEAS)</label>
+                        <textarea id="profile-edit-ideas" class="textarea-dna" style="height: 120px;" placeholder="Đánh giá 5 kịch bản ý tưởng, lý do đề xuất, chấm điểm..."></textarea>
+                    </div>
+                </div>
+
+                <!-- Section 2: Create New Profile using AI -->
+                <div id="profile-create-ai-section" class="modal-form-section">
+                    <div class="form-group">
+                        <label for="profile-new-id">ID Kênh (viết liền không dấu, tiếng Anh)</label>
+                        <input type="text" id="profile-new-id" placeholder="Vd: tai_chinh_ca_nhan" required>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group col-6">
+                            <label for="profile-new-name">Tên hiển thị Kênh</label>
+                            <input type="text" id="profile-new-name" placeholder="Vd: Tài chính Cá nhân" required>
+                        </div>
+                        <div class="form-group col-6">
+                            <label for="profile-new-desc">Mô tả ngắn gọn ngách chủ đề</label>
+                            <input type="text" id="profile-new-desc" placeholder="Vd: Kiến thức tiền bạc cho giới trẻ" required>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="profile-new-url">Link video hoặc playlist mẫu muốn bắt chước phong cách (Youtube, TikTok...)</label>
+                        <div style="display: flex; gap: 8px;">
+                            <input type="text" id="profile-new-url" placeholder="Vd: https://www.youtube.com/watch?v=xxxx" style="flex: 1; margin-bottom: 0;">
+                            <button class="btn btn-secondary" id="btn-analyze-profile-url" style="height: 38px; font-size: 13px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;">
+                                <i class="fa-solid fa-wand-magic-sparkles text-accent"></i> Phân tích bằng AI
+                            </button>
+                        </div>
+                        <span class="input-tip">AI sẽ cào và tự động phân tích nét vẽ, cách dựng kịch bản từ video tham chiếu này để gợi ý thông số DNA kênh.</span>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="profile-new-prompt">Mô tả chi tiết để AI thiết kế phong cách (Channel DNA Concept Prompt)</label>
+                        <textarea id="profile-new-prompt" class="textarea-dna" style="height: 100px;" placeholder="Vd: Kênh chia sẻ về tài chính cá nhân, phong cách vẽ doodle người que áo xanh tóc nâu. Thường vẽ các hoạt cảnh như heo đất tiết kiệm màu hồng, đồ thị đi lên đi xuống màu đỏ xanh, tiền bay tung tóe, các nhân vật đi mua sắm hoặc đếm tiền..."></textarea>
+                        <span class="input-tip">AI sẽ tự động thiết kế Persona viết kịch bản, giọng nói TTS phù hợp, visual style cho nhân vật, động tác và màu sắc.</span>
+                    </div>
+
+                    <div id="profile-ai-loading" class="loading-state hidden">
+                        <i class="fa-solid fa-circle-notch fa-spin text-accent"></i>
+                        <p>AI đang phân tích ngách và sinh thông số DNA cấu hình kênh...</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="modal-cancel-manage-profiles">Đóng</button>
+                <button class="btn btn-primary" id="btn-submit-save-profile">Lưu cấu hình</button>
+                <button class="btn btn-primary hidden" id="btn-submit-create-profile">Bắt đầu sinh DNA</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <script src="/static/app.js?v=4"></script>
+</body>
+</html>
