@@ -1371,26 +1371,60 @@ function initProfileSelector() {
     
     let currentSelectedProfile = null;
 
+    // Thiết lập Kênh active và cập nhật toàn diện
+    function setActiveProfileAndReload(id) {
+        return API.setActiveProfile(id).then(res => {
+            if (res.status === 'success') {
+                showToast(`Đã chuyển sang Kênh DNA: ${id}`, 'success');
+                loadConfiguration();
+                if (state.currentProjectName) {
+                    reloadProjectDetails();
+                }
+                return refreshProfiles(id);
+            }
+        });
+    }
+
     // Nạp danh sách profile và active profile
     function refreshProfiles(activeIdToSet = null) {
         return Promise.all([API.getProfiles(), API.getActiveProfile()]).then(([profiles, active]) => {
             state.profiles = profiles;
             state.activeProfile = active;
             
-            // Render dropdown
+            const activeId = activeIdToSet || active.profile_id;
+            
+            // Render main dropdown
             dropdown.innerHTML = '';
             profiles.forEach(p => {
                 const opt = document.createElement('option');
                 opt.value = p.profile_id;
                 opt.textContent = p.profile_name;
-                if (p.profile_id === active.profile_id) {
+                if (p.profile_id === activeId) {
                     opt.selected = true;
                 }
                 dropdown.appendChild(opt);
             });
             
-            if (activeIdToSet) {
-                dropdown.value = activeIdToSet;
+            if (activeId) {
+                dropdown.value = activeId;
+            }
+
+            // Đồng bộ sang Hồ sơ Kênh DNA trong thiết lập (cfg-img-profile-select)
+            const profileSelect = document.getElementById('cfg-img-profile-select');
+            if (profileSelect) {
+                profileSelect.innerHTML = '';
+                profiles.forEach(p => {
+                    const opt = document.createElement('option');
+                    opt.value = p.profile_id;
+                    opt.textContent = p.profile_name;
+                    if (p.profile_id === activeId) {
+                        opt.selected = true;
+                    }
+                    profileSelect.appendChild(opt);
+                });
+                if (activeId) {
+                    profileSelect.value = activeId;
+                }
             }
             
             renderModalProfilesList();
@@ -1400,16 +1434,7 @@ function initProfileSelector() {
     // Khi chọn profile khác từ dropdown
     dropdown.addEventListener('change', (e) => {
         const id = e.target.value;
-        API.setActiveProfile(id).then(res => {
-            if (res.status === 'success') {
-                showToast(`Đã chuyển sang Kênh DNA: ${id}`, 'success');
-                loadConfiguration();
-                if (state.currentProjectName) {
-                    reloadProjectDetails();
-                }
-                refreshProfiles(id);
-            }
-        });
+        setActiveProfileAndReload(id);
     });
 
     // Mở modal
@@ -1643,7 +1668,7 @@ function initProfileSelector() {
                 setValue('profile-new-prompt', '');
                 
                 switchModalTab('list');
-                refreshProfiles(res.profile_id).then(() => {
+                setActiveProfileAndReload(res.profile_id).then(() => {
                     selectProfileForEdit(res.profile_id);
                 });
             } else {
