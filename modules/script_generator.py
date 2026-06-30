@@ -21,13 +21,8 @@ import google.generativeai as genai
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # Cấu hình Gemini API hoặc Web Gemini
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-_use_web = (config.GEMINI_SCRIPT_MODEL == "web-gemini")
-
-if not _use_web:
-    genai.configure(api_key=config.GEMINI_API_KEY)
-    _model = genai.GenerativeModel(config.GEMINI_SCRIPT_MODEL)
-else:
-    _model = None
+_use_web = True
+_model = None
 
 
 def call_gemini_web(prompt: str, task_type: str) -> str:

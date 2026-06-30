@@ -314,21 +314,8 @@ def generate_image_prompts(project_dir: str) -> list[dict]:
     logger.info(f"📖 Đọc được {len(timing_data)} câu từ timing.json")
     
     # ── 2. Cấu hình Gemini hoặc Web Gemini ──
-    use_web = (config.GEMINI_PROMPT_MODEL == "web-gemini")
-    
-    if not use_web:
-        genai.configure(api_key=config.GEMINI_API_KEY)
-        system_prompt = _build_system_prompt()
-        model = genai.GenerativeModel(
-            model_name=config.GEMINI_PROMPT_MODEL,
-            system_instruction=system_prompt,
-            generation_config=genai.types.GenerationConfig(
-                temperature=0.7,
-                top_p=0.9,
-            ),
-        )
-    else:
-        model = None
+    use_web = True
+    model = None
     
     # ── 3. Chia batch nếu cần và gọi Gemini ──
     all_prompts: list[dict] = []
