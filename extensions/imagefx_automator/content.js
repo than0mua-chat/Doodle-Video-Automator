@@ -252,9 +252,12 @@ async function fillPromptToImageFX(text) {
     const slateEditor = document.querySelector('[data-slate-editor="true"]') || 
                         document.querySelector('div[role="textbox"][contenteditable="true"]');
                         
-    let inputEl = slateEditor;
+    let inputEl = null;
+    if (slateEditor && !slateEditor.closest('.automator-panel')) {
+        inputEl = slateEditor;
+    }
     
-    // 2. Fallback: Quét các ô nhập liệu thông thường (loại trừ ô tìm kiếm)
+    // 2. Fallback: Quét các ô nhập liệu thông thường (loại trừ ô tìm kiếm và panel của ta)
     if (!inputEl) {
         const textareas = Array.from(document.querySelectorAll('textarea'));
         const editables = Array.from(document.querySelectorAll('[contenteditable="true"]'));
@@ -264,6 +267,10 @@ async function fillPromptToImageFX(text) {
         const textboxes = Array.from(document.querySelectorAll('[role="textbox"]'));
         
         const candidates = [...textareas, ...editables, ...inputs, ...textboxes].filter(el => {
+            // Loại trừ các ô nhập liệu thuộc chính bảng điều khiển của Automator
+            if (el.closest('.automator-panel') || el.closest('#imagefx-automator-panel') || el.closest('#aistudio-automator-panel')) {
+                return false;
+            }
             const rect = el.getBoundingClientRect();
             return rect.width > 150 && rect.height > 20;
         });
@@ -304,8 +311,11 @@ async function fillPromptToImageFX(text) {
                     log(`Lỗi giao tiếp Background: ${chrome.runtime.lastError.message}`, 'error');
                     resolve(false);
                 } else if (response && response.ok) {
-                    log("Đã giả lập gõ chữ và bấm gửi bằng Debugger thành công!");
-                    resolve(true);
+                    log("Đã giả lập gõ chữ bằng Debugger thành công. Đang kích hoạt nút Tạo/Generate...");
+                    setTimeout(() => {
+                        const clicked = clickGenerateButton();
+                        resolve(clicked);
+                    }, 500);
                 } else {
                     log(`Lỗi gỡ lỗi: ${response ? response.error : 'Không phản hồi'} (Nhớ ĐÓNG DevTools F12 trên tab Google Flow khi chạy)`, 'error');
                     resolve(false);
@@ -316,6 +326,42 @@ async function fillPromptToImageFX(text) {
         log("Không tìm thấy ô nhập prompt nào trên màn hình!", "error");
         return false;
     }
+}
+
+// Bấm nút "Generate" hoặc nút gửi (mũi tên) trên ImageFX / Google Flow
+function clickGenerateButton() {
+    const buttons = Array.from(document.querySelectorAll('button'));
+    
+    // 1. Tìm nút có chứa icon arrow_forward (nút gửi chính thức của Google Flow)
+    let generateBtn = buttons.find(b => b.innerHTML.includes('arrow_forward') || b.querySelector('svg[data-icon="arrow-forward"]'));
+
+    // 2. Tìm nút theo nhãn chữ Generate (tiếng Anh) hoặc Tạo (tiếng Việt)
+    if (!generateBtn) {
+        generateBtn = buttons.find(b => {
+            const txt = (b.textContent || b.innerText || "").trim().toLowerCase();
+            return txt === 'generate' || txt === 'tạo';
+        });
+    }
+
+    // 3. Fallback: Tìm nút có chứa icon send/submit hoặc chứa class/nhãn liên quan
+    if (!generateBtn) {
+        generateBtn = buttons.find(b => 
+            b.innerHTML.includes('send') || 
+            b.className.includes('send') || 
+            b.className.includes('submit') || 
+            b.getAttribute('aria-label') === 'Generate' ||
+            b.getAttribute('aria-label') === 'Tạo'
+        );
+    }
+
+    if (generateBtn) {
+        generateBtn.click();
+        log("Đã click nút Generate/Tạo!");
+        return true;
+    }
+    
+    log("Cảnh báo: Không tìm thấy nút Generate/Tạo trên giao diện. Trình duyệt thử tự gửi bằng phím Enter.", "warning");
+    return true; // Vẫn trả về true để tiếp tục chờ xem phím Enter có hoạt động không
 }
 
 
