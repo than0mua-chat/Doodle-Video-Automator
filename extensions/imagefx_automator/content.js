@@ -527,11 +527,6 @@ function getNewImages(baseline, promptText) {
             return false;
         }
 
-        // Bổ sung lọc theo prompt alt text để tránh lấy nhầm ảnh của prompt cũ
-        if (promptText && !isImageMatchingPrompt(img, promptText)) {
-            return false;
-        }
-        
         return true;
     });
 }
