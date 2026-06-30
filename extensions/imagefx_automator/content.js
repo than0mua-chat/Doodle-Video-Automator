@@ -1283,13 +1283,10 @@ setTimeout(async () => {
         if (hostInputEl) hostInputEl.value = dashboardUrl;
 
         if (savedRunning) {
-            log("Phát hiện tiến trình đang chạy dở trước khi reload. Đang khôi phục...", "warning");
+            log("Phát hiện kết nối cũ trước khi reload. Đang khôi phục...", "warning");
             await connectDashboard();
-            if (activeProject) {
-                setTimeout(() => {
-                    startAutomation();
-                }, 2000);
-            }
+            // Đặt trạng thái chạy về false để người dùng tự click "Bắt đầu chạy" khi sẵn sàng
+            localStorage.setItem('imagefx_automator_running', 'false');
         }
     }
 }, 2000);
