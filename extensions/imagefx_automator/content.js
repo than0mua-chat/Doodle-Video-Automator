@@ -331,8 +331,8 @@ function findGenerateButton(input) {
       b.textContent
     ).toLowerCase();
 
-  const bad = /agent|tác nhân|delete|close|xoá|xóa|trash|thùng|panel|banana|model|setting/i;
-  const wanted = /submit|send|run|gửi|送信|生成|→|paper.?plane/i;
+  const bad = /\b(agent|delete|close|xoá|xóa|trash|panel|banana|model|setting)\b/i;
+  const wanted = /\b(submit|send|run|gửi|送信|生成|paper.?plane)\b|→/i;
   b = buttons.find((x) => wanted.test(label(x)) && !bad.test(label(x)));
   if (b) {
     sendDebugLog(`✅ Khớp nút (từ khóa wanted): TAG=${b.tagName}`);

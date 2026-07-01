@@ -208,11 +208,16 @@ function escapeHtml(s) {
 // ---------- 5. Locate active Flow/ImageFX tab ----------
 async function getFlowTab() {
   const tabs = await chrome.tabs.query({});
-  return tabs.find(t => 
+  const tab = tabs.find(t => 
     /aitestkitchen\.withgoogle\.com\/tools\/image-fx/i.test(t.url || "") ||
     /labs\.google\/fx\/tools\/flow/i.test(t.url || "") ||
     /labs\.google\/.*\/tools\/flow/i.test(t.url || "")
   ) || null;
+  
+  if (tab && tab.url && /labs\.google/i.test(tab.url) && !tab.url.includes('/project/')) {
+    tab.__isFlowHomepage = true;
+  }
+  return tab;
 }
 
 function sendToTab(tabId, msg) {
@@ -342,6 +347,12 @@ async function startAutomation() {
     const currentTab = await getFlowTab();
     if (!currentTab) {
       log("Không tìm thấy tab Google ImageFX/Flow. Đang chờ 5s...", "error");
+      await sleep(5000);
+      continue;
+    }
+    
+    if (currentTab.__isFlowHomepage) {
+      log("⚠️ Bạn đang ở trang chủ Google Flow. Vui lòng click mở một dự án cũ hoặc tạo 'Dự án mới' để bắt đầu!", "warning");
       await sleep(5000);
       continue;
     }
