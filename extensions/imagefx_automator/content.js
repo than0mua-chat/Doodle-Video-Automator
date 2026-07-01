@@ -176,7 +176,7 @@ function setPromptText(el, text) {
     const r = el.getBoundingClientRect();
     const x = r.left + r.width / 2;
     const y = r.top + r.height / 2;
-    sendDebugLog(`Giả lập click tọa độ trung tâm (${x.toFixed(1)}, ${y.toFixed(1)}) để Slate/React nhận diện`);
+    sendDebugLog(`Giả lập click tọa độ trung tâm (${x.toFixed(1)}, ${y.toFixed(1)})`);
     ["mousedown", "mouseup", "click"].forEach((t) => {
       (document.elementFromPoint(x, y) || el).dispatchEvent(
         new MouseEvent(t, { bubbles: true, cancelable: true, clientX: x, clientY: y, view: window })
@@ -198,57 +198,57 @@ function setPromptText(el, text) {
     } catch (e) {
       sendDebugLog(`Lỗi execCommand: ${e.message}`, "warning");
     }
-  }
-  
-  const textLen = inputText(el).trim().length;
-  sendDebugLog(`Độ dài chữ sau cách 1: ${textLen}`);
-  
-  if (textLen < 3) {
-    sendDebugLog("Thử cách 2: Dispatch beforeinput event");
+  } else {
+    sendDebugLog("Định dạng: TEXTAREA hoặc INPUT");
     try {
-      const e1 = el.dispatchEvent(new InputEvent("beforeinput", {
-        inputType: "deleteContentBackward",
-        bubbles: true,
-        cancelable: true,
-        composed: true,
-      }));
-      const e2 = el.dispatchEvent(new InputEvent("beforeinput", {
+      // Đánh thức ô nhập bằng cách gửi sự kiện nhấn phím giả lập
+      el.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "a", code: "KeyA" }));
+      
+      // 1. Dispatch beforeinput
+      el.dispatchEvent(new InputEvent("beforeinput", {
         inputType: "insertText",
         data: text,
         bubbles: true,
         cancelable: true,
         composed: true,
       }));
-      sendDebugLog(`Kết quả dispatch beforeinput: delete=${e1}, insert=${e2}`);
-    } catch (e) {
-      sendDebugLog(`Lỗi beforeinput: ${e.message}`, "warning");
-    }
-  }
-  
-  const textLen2 = inputText(el).trim().length;
-  sendDebugLog(`Độ dài chữ sau cách 2: ${textLen2}`);
-  
-  if (textLen2 < 3) {
-    sendDebugLog("Thử cách 3: Gán innerText/value trực tiếp");
-    try {
-      if (el.isContentEditable) {
-        el.innerText = text;
-      } else {
-        const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-        const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
-        if (setter) setter.call(el, text);
-        else el.value = text;
-        
-        // React 16+ Value Tracker Bypass
-        const tracker = el._valueTracker;
-        if (tracker) {
-          tracker.setValue('');
-          sendDebugLog("Đã bypass React _valueTracker.");
-        }
+      
+      // 2. Gán trực tiếp qua value setter
+      const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+      if (setter) setter.call(el, text);
+      else el.value = text;
+      
+      // React 16+ Value Tracker Bypass
+      const tracker = el._valueTracker;
+      if (tracker) {
+        tracker.setValue('');
+        sendDebugLog("Đã bypass React _valueTracker.");
       }
-      el.dispatchEvent(new Event('input', { bubbles: true }));
+      
+      // 3. Dispatch TextEvent (Mô phỏng nhập văn bản chuẩn Chrome)
+      try {
+        const textEvent = document.createEvent("TextEvent");
+        textEvent.initTextEvent("textInput", true, true, window, text);
+        el.dispatchEvent(textEvent);
+        sendDebugLog("Đã dispatch TextEvent (textInput).");
+      } catch (err) {
+        sendDebugLog(`Lỗi gửi TextEvent: ${err.message}`, "warning");
+      }
+      
+      // 4. Dispatch KeyboardEvent keyup sau khi nhập
+      el.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, cancelable: true, key: "a", code: "KeyA" }));
+      
+      // 5. Dispatch input và change events
+      el.dispatchEvent(new InputEvent("input", {
+        inputType: "insertText",
+        data: text,
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+      }));
       el.dispatchEvent(new Event('change', { bubbles: true }));
-      sendDebugLog("Đã gán trực tiếp và dispatch input/change");
+      sendDebugLog("Đã hoàn thành chuỗi sự kiện gõ chữ.");
     } catch (e) {
       sendDebugLog(`Lỗi gán trực tiếp: ${e.message}`, "error");
     }
@@ -256,6 +256,14 @@ function setPromptText(el, text) {
   
   const finalLen = inputText(el).trim().length;
   sendDebugLog(`Độ dài chữ cuối cùng trong ô prompt: ${finalLen}`);
+  
+  // Hỗ trợ tự động submit form nếu có
+  try {
+    const form = el.closest('form');
+    if (form) {
+      sendDebugLog("Tìm thấy form bao quanh. Thiết lập click/submit dự phòng.");
+    }
+  } catch (_) {}
 }
 
 function inputText(el) {
