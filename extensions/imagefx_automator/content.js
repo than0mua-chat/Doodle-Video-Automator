@@ -11,11 +11,14 @@ let dashboardUrl = "http://127.0.0.1:8085";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function sendDebugLog(text, type = "info") {
-  try {
-    chrome.runtime.sendMessage({ type: "DEBUG_LOG", text: text, logType: type }, () => {
-      if (chrome.runtime.lastError) {}
-    });
-  } catch (_) {}
+  // Disable sending info logs to sidepanel to keep it clean (as requested)
+  if (type === "error" || type === "warning") {
+    try {
+      chrome.runtime.sendMessage({ type: "DEBUG_LOG", text: text, logType: type }, () => {
+        if (chrome.runtime.lastError) {}
+      });
+    } catch (_) {}
+  }
   console.log(`[DVA Debug] ${text}`);
 }
 
@@ -586,6 +589,12 @@ if (!window.__DVA_LISTENER_REGISTERED__) {
       })();
       return true;
     }
+    if (msg.type === "EXECUTE_GEMINI") {
+      executeAIStudioTask(msg.prompt)
+        .then((res) => sendResponse({ ok: true, data: res }))
+        .catch((err) => sendResponse({ ok: false, error: String(err) }));
+      return true;
+    }
     
     if (msg.type === "TODATAURL") {
       toDataUrl(msg.src)
@@ -608,172 +617,7 @@ function getValidatedHost() {
 //  GOOGLE AI STUDIO AUTOMATION LOGIC (For Web Gemini)
 // =============================================================
 
-let isAIStudioRunning = false;
-let aiStudioPollTimer = null;
-
-function createAIStudioUI() {
-    if (document.getElementById('aistudio-automator-panel')) return;
-
-    dashboardUrl = getValidatedHost();
-
-    const isGemini = window.location.hostname.includes('gemini.google.com');
-    const titleText = isGemini ? "🤖 Gemini Web Automator" : "🤖 AI Studio Automator";
-
-    const panel = document.createElement('div');
-    panel.id = 'aistudio-automator-panel';
-    panel.className = 'automator-panel';
-    panel.innerHTML = `
-        <div class="automator-header">
-            <span class="automator-title">${titleText}</span>
-            <button class="automator-minimize-btn" id="aistudio-min-btn">−</button>
-        </div>
-        <div class="automator-body" id="aistudio-body">
-            <div class="automator-row">
-                <input type="text" id="aistudio-host-input" value="${dashboardUrl}" placeholder="Dashboard Host">
-                <button class="automator-btn" id="aistudio-connect-btn">Kết nối</button>
-            </div>
-            
-            <div class="automator-project-info" id="aistudio-project-info">
-                Kết nối với Dashboard để tự động nhận task.
-            </div>
-
-            <div class="automator-controls hidden" id="aistudio-controls">
-                <div class="automator-actions-row">
-                    <button class="automator-btn btn-success" id="aistudio-start-btn">Bắt đầu chạy</button>
-                    <button class="automator-btn btn-danger hidden" id="aistudio-stop-btn">Dừng</button>
-                </div>
-            </div>
-
-            <div class="automator-logs" id="aistudio-logs" style="min-height: 350px;">
-                [Hệ thống] Nhấp "Kết nối" để bắt đầu lắng nghe hàng đợi...
-            </div>
-        </div>
-    `;
-
-    document.body.appendChild(panel);
-
-    // Bind events
-    document.getElementById('aistudio-connect-btn').addEventListener('click', connectAIStudioDashboard);
-    document.getElementById('aistudio-min-btn').addEventListener('click', toggleAIStudioMinimize);
-    document.getElementById('aistudio-start-btn').addEventListener('click', startAIStudioAutomation);
-    document.getElementById('aistudio-stop-btn').addEventListener('click', stopAIStudioAutomation);
-}
-
-function toggleAIStudioMinimize() {
-    const panel = document.getElementById('aistudio-automator-panel');
-    const body = document.getElementById('aistudio-body');
-    const btn = document.getElementById('aistudio-min-btn');
-    if (body.style.display === 'none') {
-        body.style.display = 'block';
-        if (panel) panel.classList.remove('minimized');
-        btn.textContent = '−';
-    } else {
-        body.style.display = 'none';
-        if (panel) panel.classList.add('minimized');
-        btn.textContent = '+';
-    }
-}
-
-function logAIStudio(msg, type = 'info') {
-    const logBox = document.getElementById('aistudio-logs');
-    if (!logBox) return;
-    const time = new Date().toLocaleTimeString('vi-VN', { hour12: false });
-    const classMap = { info: '', success: 'text-success', error: 'text-danger', warning: 'text-warning' };
-    
-    logBox.innerHTML += `<div class="${classMap[type] || ''}">[${time}] ${msg}</div>`;
-    logBox.scrollTop = logBox.scrollHeight;
-}
-
-async function connectAIStudioDashboard() {
-    const hostInput = document.getElementById('aistudio-host-input').value.trim();
-    if (!hostInput) return;
-    
-    if (!hostInput.startsWith('http://') && !hostInput.startsWith('https://')) {
-        logAIStudio(`URL không hợp lệ: "${hostInput.substring(0, 50)}...". Phải bắt đầu bằng http:// hoặc https://`, 'error');
-        document.getElementById('aistudio-host-input').value = dashboardUrl;
-        return;
-    }
-    
-    dashboardUrl = hostInput;
-    localStorage.setItem('imagefx_automator_host', dashboardUrl);
-    
-    logAIStudio(`Đang kết nối tới Dashboard tại ${dashboardUrl}...`);
-    
-    try {
-        const res = await fetch(`${dashboardUrl}/api/config`);
-        if (!res.ok) throw new Error("Không phản hồi");
-        
-        logAIStudio(`Đã kết nối thành công với Dashboard!`, 'success');
-        document.getElementById('aistudio-project-info').innerHTML = `
-            <div><strong>Trạng thái:</strong> Sẵn sàng</div>
-            <div><strong>Host:</strong> <code>${dashboardUrl}</code></div>
-        `;
-        
-        document.getElementById('aistudio-controls').classList.remove('hidden');
-        
-    } catch (e) {
-        logAIStudio(`Lỗi kết nối Dashboard! Hãy kiểm tra địa chỉ host.`, 'error');
-        console.error(e);
-    }
-}
-
-async function startAIStudioAutomation() {
-    if (isAIStudioRunning) return;
-    isAIStudioRunning = true;
-    
-    document.getElementById('aistudio-start-btn').classList.add('hidden');
-    document.getElementById('aistudio-stop-btn').classList.remove('hidden');
-    
-    logAIStudio("Khởi động lắng nghe hàng đợi Web Gemini từ Dashboard...", "warning");
-    runAIStudioLoop();
-}
-
-function stopAIStudioAutomation() {
-    isAIStudioRunning = false;
-    if (aiStudioPollTimer) {
-        clearTimeout(aiStudioPollTimer);
-        aiStudioPollTimer = null;
-    }
-    document.getElementById('aistudio-start-btn').classList.remove('hidden');
-    document.getElementById('aistudio-stop-btn').classList.add('hidden');
-    logAIStudio("Đã dừng tự động hóa AI Studio.", "warning");
-}
-
-async function runAIStudioLoop() {
-    if (!isAIStudioRunning) return;
-    
-    try {
-        const res = await fetch(`${dashboardUrl}/api/web-gemini/pending`);
-        if (res.status === 200) {
-            const task = await res.json();
-            logAIStudio(`Nhận được task mới: ID=${task.task_id}, Type=${task.task_type}`, 'warning');
-            
-            // Tạm dừng check loop khi đang xử lý task
-            stopAIStudioAutomation();
-            
-            try {
-                const result = await executeAIStudioTask(task.prompt);
-                logAIStudio(`Hoàn thành task ${task.task_id}! Đang gửi kết quả...`, 'success');
-                await sendTaskResult(task.task_id, result, null);
-            } catch (err) {
-                logAIStudio(`Lỗi thực thi task ${task.task_id}: ${err.message}`, 'error');
-                await sendTaskResult(task.task_id, null, err.message);
-            }
-            
-            // Khởi chạy lại loop sau khi hoàn thành
-            startAIStudioAutomation();
-            return;
-        } else if (res.status === 204) {
-            // Không có task, tiếp tục
-        }
-    } catch (e) {
-        logAIStudio(`Lỗi kết nối server Dashboard: ${e.message}`, 'error');
-    }
-    
-    if (isAIStudioRunning) {
-        aiStudioPollTimer = setTimeout(runAIStudioLoop, 3000);
-    }
-}
+// Gemini UI logic has been moved to sidepanel.js
 
 function findAIStudioInput() {
     const selectors = [
@@ -971,34 +815,13 @@ async function executeAIStudioTask(prompt) {
         throw new Error("Không lấy được kết quả sinh từ giao diện!");
     }
     
-    logAIStudio(`Lấy kết quả thành công! Độ dài: ${resultText.length} ký tự.`, 'success');
     return resultText;
-}
-
-async function sendTaskResult(taskId, result, error) {
-    try {
-        const res = await fetch(`${dashboardUrl}/api/web-gemini/complete`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                task_id: taskId,
-                result: result,
-                error: error
-            })
-        });
-        if (!res.ok) throw new Error("Gửi kết quả thất bại");
-        logAIStudio(`Đã đồng bộ kết quả task ${taskId} lên server!`, 'success');
-    } catch (e) {
-        logAIStudio(`Lỗi gửi kết quả lên server: ${e.message}`, 'error');
-    }
 }
 
 // Khởi chạy tự động
 setTimeout(async () => {
     const isAIStudio = window.location.hostname.includes('aistudio.google.com') || window.location.hostname.includes('gemini.google.com');
-    if (isAIStudio) {
-        createAIStudioUI();
-    } else {
+    if (!isAIStudio) {
         // Quét sạch các ảnh trên màn hình khi tải trang lần đầu để làm sạch baseline
         Array.from(document.querySelectorAll('img')).forEach(img => {
             if (img.src) seenImageUrls.add(img.src);

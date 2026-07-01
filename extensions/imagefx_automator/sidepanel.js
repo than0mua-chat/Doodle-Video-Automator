@@ -24,12 +24,78 @@ const els = {
   progress: $("progress"),
   pfill: $("pfill"),
   queue: $("queue"),
+  
+  // Gemini UI elements
+  geminiHost: $("gemini-host-input"),
+  geminiConnectBtn: $("gemini-connect-btn"),
+  geminiConn: $("gemini-conn"),
+  geminiConnText: $("gemini-connText"),
+  geminiControls: $("gemini-controls"),
+  geminiStartBtn: $("gemini-start-btn"),
+  geminiStopBtn: $("gemini-stop-btn"),
+  geminiLogsConsole: $("gemini-logs-console"),
+  
+  // Views
+  mainTitle: $("main-title"),
+  mainSubtitle: $("main-subtitle"),
+  views: {
+    imagefx: $("imagefx-view"),
+    gemini: $("gemini-view"),
+    nomatch: $("nomatch-view")
+  }
 };
 
 let dashboardUrl = "http://127.0.0.1:8085";
 let activeProject = null;
 let isRunning = false;
 let expectedImageCount = 2;
+
+let isGeminiRunning = false;
+let geminiPollTimer = null;
+let currentView = 'nomatch';
+
+// ---------- View Management ----------
+async function checkActiveTab() {
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tabs || tabs.length === 0) return;
+  const url = tabs[0].url || "";
+  
+  if (url.includes("labs.google/fx") || url.includes("imagefx")) {
+    switchView("imagefx");
+  } else if (url.includes("gemini.google.com") || url.includes("aistudio.google.com")) {
+    switchView("gemini");
+  } else {
+    switchView("nomatch");
+  }
+}
+
+function switchView(viewName) {
+  if (currentView === viewName) return;
+  currentView = viewName;
+  
+  els.views.imagefx.style.display = "none";
+  els.views.gemini.style.display = "none";
+  els.views.nomatch.style.display = "none";
+  
+  if (viewName === "imagefx") {
+    els.mainTitle.innerHTML = 'Doodle<span class="accent">_Video</span>';
+    els.mainSubtitle.textContent = 'ImageFX Automator Panel · v2.0';
+    els.views.imagefx.style.display = "block";
+  } else if (viewName === "gemini") {
+    els.mainTitle.innerHTML = 'Gemini<span class="accent">_Web</span>';
+    els.mainSubtitle.textContent = 'AI Studio Automator Panel';
+    els.views.gemini.style.display = "block";
+  } else {
+    els.mainTitle.innerHTML = 'Doodle<span class="accent">_Video</span>';
+    els.mainSubtitle.textContent = 'Trợ lý Tự động hóa';
+    els.views.nomatch.style.display = "block";
+  }
+}
+
+chrome.tabs.onActivated.addListener(checkActiveTab);
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.url) checkActiveTab();
+});
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -674,6 +740,133 @@ async function retryPrompt() {
 
 // ---------- 10. Event Listeners initialization ----------
 els.host.addEventListener("change", saveSettings);
+// ============================================================
+// GEMINI / AI STUDIO AUTOMATION
+// ============================================================
+
+function geminiLog(message, type = "info") {
+  const line = document.createElement("div");
+  line.className = `log-line ${type}`;
+  
+  const time = new Date().toLocaleTimeString();
+  line.textContent = `[${time}] ${message}`;
+  
+  els.geminiLogsConsole.appendChild(line);
+  els.geminiLogsConsole.scrollTop = els.geminiLogsConsole.scrollHeight;
+  console.log(`[GeminiPanel ${type}] ${message}`);
+}
+
+async function connectGeminiDashboard() {
+  const host = els.geminiHost.value.trim().replace(/\/$/, "");
+  if (!host) return;
+  
+  dashboardUrl = host;
+  els.geminiConn.className = "conn conn--off";
+  els.geminiConnText.textContent = "Đang kiểm tra kết nối...";
+  
+  try {
+    const res = await fetch(`${dashboardUrl}/api/config`);
+    if (!res.ok) throw new Error("Không phản hồi");
+    
+    els.geminiConn.className = "conn conn--on";
+    els.geminiConnText.textContent = "Đã kết nối Dashboard";
+    els.geminiControls.style.display = "block";
+    geminiLog(`Kết nối thành công tới ${dashboardUrl}`, "success");
+    
+  } catch (e) {
+    els.geminiConn.className = "conn conn--err";
+    els.geminiConnText.textContent = "Lỗi kết nối Dashboard";
+    geminiLog(`Lỗi kết nối Dashboard! Hãy kiểm tra địa chỉ host.`, "error");
+  }
+}
+
+async function startGeminiAutomation() {
+  if (isGeminiRunning) return;
+  isGeminiRunning = true;
+  
+  els.geminiStartBtn.style.display = "none";
+  els.geminiStopBtn.style.display = "inline-block";
+  
+  geminiLog("Khởi động lắng nghe hàng đợi Web Gemini từ Dashboard...", "warning");
+  runGeminiLoop();
+}
+
+function stopGeminiAutomation() {
+  isGeminiRunning = false;
+  if (geminiPollTimer) {
+    clearTimeout(geminiPollTimer);
+    geminiPollTimer = null;
+  }
+  els.geminiStartBtn.style.display = "inline-block";
+  els.geminiStopBtn.style.display = "none";
+  geminiLog("Đã dừng tự động hóa Gemini.", "warning");
+}
+
+async function runGeminiLoop() {
+  if (!isGeminiRunning) return;
+  
+  try {
+    const res = await fetch(`${dashboardUrl}/api/web-gemini/pending`);
+    if (res.status === 200) {
+      const task = await res.json();
+      geminiLog(`Nhận được task mới: ID=${task.task_id}, Type=${task.task_type}`, 'warning');
+      
+      // Tạm dừng check loop khi đang xử lý task
+      isGeminiRunning = false;
+      if (geminiPollTimer) clearTimeout(geminiPollTimer);
+      
+      try {
+        const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tabs && tabs.length > 0) {
+          geminiLog(`Bắt đầu xử lý task trên tab hiện tại...`, "info");
+          const result = await sendToTab(tabs[0].id, { type: "EXECUTE_GEMINI", prompt: task.prompt });
+          
+          if (result && result.ok) {
+            geminiLog(`Hoàn thành task ${task.task_id}! Đang gửi kết quả...`, 'success');
+            await fetch(`${dashboardUrl}/api/web-gemini/complete`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ task_id: task.task_id, result: result.data, error: null })
+            });
+            geminiLog(`Đã đồng bộ kết quả task ${task.task_id} lên server!`, "success");
+          } else {
+            throw new Error((result && result.error) ? result.error : "Không nhận được phản hồi từ tab");
+          }
+        } else {
+          throw new Error("Không tìm thấy tab active");
+        }
+      } catch (err) {
+        geminiLog(`Lỗi thực thi task ${task.task_id}: ${err.message}`, 'error');
+        await fetch(`${dashboardUrl}/api/web-gemini/complete`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ task_id: task.task_id, result: null, error: err.message })
+        });
+      }
+      
+      // Khởi chạy lại loop sau khi hoàn thành
+      if (els.geminiStopBtn.style.display !== "none") {
+        isGeminiRunning = true;
+        geminiPollTimer = setTimeout(runGeminiLoop, 1000);
+      }
+      return;
+    }
+  } catch (e) {
+    geminiLog(`Lỗi kết nối server Dashboard: ${e.message}`, 'error');
+  }
+  
+  if (isGeminiRunning) {
+    geminiPollTimer = setTimeout(runGeminiLoop, 3000);
+  }
+}
+
+// Bind events for Gemini
+els.geminiConnectBtn.addEventListener("click", connectGeminiDashboard);
+els.geminiStartBtn.addEventListener("click", startGeminiAutomation);
+els.geminiStopBtn.addEventListener("click", stopGeminiAutomation);
+
+// Initial check when sidepanel opens
+checkActiveTab();
 els.delayMin.addEventListener("change", saveSettings);
 els.delayMax.addEventListener("change", saveSettings);
 els.saveLocal.addEventListener("change", saveSettings);
