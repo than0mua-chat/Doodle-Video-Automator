@@ -195,6 +195,106 @@ def call_gemini_web(prompt: str, task_type: str) -> str:
     raise TimeoutError(f"Quá thời gian chờ {max_wait}s cho task Web Gemini {task_id}.")
 
 
+def _call_gemini_single(
+    model: Optional[genai.GenerativeModel], 
+    sentence: dict, 
+    index: int
+) -> dict:
+    """
+    Tạo prompt hình ảnh cho một câu đơn lẻ (dùng để sửa lỗi khi Gemini trả về thiếu trong batch).
+    """
+    system_prompt = _build_system_prompt()
+    user_message = f"Generate exactly one image prompt for this sentence, with index {index}:\n\nIndex {index}: {sentence['text']}"
+    
+    full_prompt = f"{system_prompt}\n\n{user_message}"
+    logger.info(f"    👉 Tạo bổ sung prompt cho câu #{index}...")
+    
+    # Thử tối đa 3 lần
+    for attempt in range(1, 4):
+        try:
+            if model is not None:
+                response = model.generate_content(full_prompt)
+                response_text = response.text
+            else:
+                response_text = call_gemini_web(full_prompt, f"single_prompt_#{index}")
+                
+            prompts = _parse_gemini_response(response_text)
+            if isinstance(prompts, list) and len(prompts) > 0:
+                p = prompts[0]
+            elif isinstance(prompts, dict):
+                p = prompts
+            else:
+                continue
+                
+            # Đảm bảo index đúng
+            p["index"] = index
+            
+            # Kiểm tra style anchor & lock
+            prompt_text = p.get("prompt", "")
+            if not prompt_text.startswith(config.IMAGE_PROMPT_STYLE_ANCHOR):
+                p["prompt"] = config.IMAGE_PROMPT_STYLE_ANCHOR + " " + prompt_text
+            if not p["prompt"].rstrip().endswith(config.IMAGE_PROMPT_STYLE_LOCK):
+                p["prompt"] = p["prompt"].rstrip() + " " + config.IMAGE_PROMPT_STYLE_LOCK
+                
+            return p
+        except Exception as e:
+            logger.warning(f"      ✗ Lỗi tạo bổ sung câu #{index} (lần {attempt}): {e}")
+            time.sleep(2)
+            
+    # Fallback nếu lỗi hoàn toàn
+    return {
+        "index": index,
+        "prompt": config.IMAGE_PROMPT_STYLE_ANCHOR + f" a stick figure representing: {sentence['text']} " + config.IMAGE_PROMPT_STYLE_LOCK
+    }
+
+
+def _align_and_repair_prompts(
+    prompts: list[dict], 
+    sentences: list[dict], 
+    batch_offset: int, 
+    model: Optional[genai.GenerativeModel]
+) -> list[dict]:
+    # Tự động gán index và sửa lỗi nếu Gemini trả về sai index hoặc không gán
+    for idx, p in enumerate(prompts):
+        if not isinstance(p, dict):
+            continue
+        p_idx = p.get("index")
+        if p_idx is None or p_idx < batch_offset or p_idx >= batch_offset + len(sentences):
+            p["index"] = batch_offset + idx
+            
+    # Tìm xem có index nào bị thiếu không
+    expected_indices = set(range(batch_offset, batch_offset + len(sentences)))
+    received_indices = {p.get("index") for p in prompts if isinstance(p, dict) and p.get("index") is not None}
+    missing_indices = expected_indices - received_indices
+    
+    if missing_indices:
+        logger.warning(f"  ⚠ Phát hiện thiếu prompt cho các chỉ số câu: {sorted(list(missing_indices))}. Đang tự động gọi bổ sung...")
+        for missing_idx in sorted(list(missing_indices)):
+            sentence_idx_in_batch = missing_idx - batch_offset
+            if 0 <= sentence_idx_in_batch < len(sentences):
+                missing_prompt = _call_gemini_single(model, sentences[sentence_idx_in_batch], missing_idx)
+                prompts.append(missing_prompt)
+                
+    # Lọc bỏ trùng lặp và giữ lại các prompt hợp lệ
+    unique_prompts = []
+    seen_indices = set()
+    for p in sorted(prompts, key=lambda x: x.get("index", 0)):
+        idx = p.get("index", 0)
+        if idx in expected_indices and idx not in seen_indices:
+            seen_indices.add(idx)
+            unique_prompts.append(p)
+            
+    # Đảm bảo mỗi prompt có đầy đủ cấu trúc anchor và lock
+    for p in unique_prompts:
+        prompt_text = p.get("prompt", "")
+        if not prompt_text.startswith(config.IMAGE_PROMPT_STYLE_ANCHOR):
+            p["prompt"] = config.IMAGE_PROMPT_STYLE_ANCHOR + " " + prompt_text
+        if not p["prompt"].rstrip().endswith(config.IMAGE_PROMPT_STYLE_LOCK):
+            p["prompt"] = p["prompt"].rstrip() + " " + config.IMAGE_PROMPT_STYLE_LOCK
+            
+    return unique_prompts
+
+
 def _call_gemini_batch(
     model: Optional[genai.GenerativeModel],
     sentences: list[dict],
@@ -227,30 +327,9 @@ def _call_gemini_batch(
             
             prompts = _parse_gemini_response(response_text)
             
-            # Validate: kiểm tra số lượng prompt trả về
-            if len(prompts) != len(sentences):
-                logger.warning(
-                    f"  ⚠ Số prompt ({len(prompts)}) != số câu ({len(sentences)}). "
-                    f"Chấp nhận kết quả."
-                )
-            
-            # Validate: kiểm tra mỗi prompt có anchor và lock
-            for p in prompts:
-                prompt_text = p.get("prompt", "")
-                if not prompt_text.startswith(config.IMAGE_PROMPT_STYLE_ANCHOR):
-                    logger.warning(
-                        f"  ⚠ Prompt index {p.get('index', '?')} thiếu style anchor, tự thêm."
-                    )
-                    p["prompt"] = config.IMAGE_PROMPT_STYLE_ANCHOR + " " + prompt_text
-                
-                if not prompt_text.rstrip().endswith(config.IMAGE_PROMPT_STYLE_LOCK):
-                    logger.warning(
-                        f"  ⚠ Prompt index {p.get('index', '?')} thiếu style lock, tự thêm."
-                    )
-                    if not p["prompt"].rstrip().endswith(config.IMAGE_PROMPT_STYLE_LOCK):
-                        p["prompt"] = p["prompt"].rstrip() + " " + config.IMAGE_PROMPT_STYLE_LOCK
-            
-            logger.info(f"  ✓ Nhận được {len(prompts)} prompt từ batch này.")
+            # Tự động gán index, sửa lỗi thiếu và lọc trùng lặp
+            prompts = _align_and_repair_prompts(prompts, sentences, batch_offset, model)
+            logger.info(f"  ✓ Đã căn chỉnh và sửa lỗi, thu được {len(prompts)} prompt đầy đủ từ batch này.")
             return prompts
             
         except Exception as e:
@@ -262,14 +341,8 @@ def _call_gemini_batch(
                     full_prompt = f"{system_prompt}\n\n{user_message}"
                     response_text = call_gemini_web(full_prompt, f"prompt (Batch {batch_info})")
                     prompts = _parse_gemini_response(response_text)
-                    for p in prompts:
-                        prompt_text = p.get("prompt", "")
-                        if not prompt_text.startswith(config.IMAGE_PROMPT_STYLE_ANCHOR):
-                            p["prompt"] = config.IMAGE_PROMPT_STYLE_ANCHOR + " " + prompt_text
-                        if not prompt_text.rstrip().endswith(config.IMAGE_PROMPT_STYLE_LOCK):
-                            if not p["prompt"].rstrip().endswith(config.IMAGE_PROMPT_STYLE_LOCK):
-                                p["prompt"] = p["prompt"].rstrip() + " " + config.IMAGE_PROMPT_STYLE_LOCK
-                    logger.info(f"  ✓ Nhận được {len(prompts)} prompt từ Web Gemini.")
+                    prompts = _align_and_repair_prompts(prompts, sentences, batch_offset, model)
+                    logger.info(f"  ✓ Nhận được {len(prompts)} prompt đầy đủ từ Web Gemini.")
                     return prompts
                 except Exception as web_err:
                     logger.error(f"  ✗ Lỗi khi fallback sang Web Gemini: {web_err}")
@@ -312,6 +385,70 @@ def generate_image_prompts(project_dir: str) -> list[dict]:
         raise ValueError("timing.json rỗng, không có câu nào để tạo prompt.")
     
     logger.info(f"📖 Đọc được {len(timing_data)} câu từ timing.json")
+    
+    # ── 2. Đọc prompts.json cũ nếu có để tự động sửa chữa/bổ dung ──
+    prompts_json_path = os.path.join(project_dir, "prompts.json")
+    existing_prompts = []
+    if os.path.exists(prompts_json_path):
+        try:
+            with open(prompts_json_path, "r", encoding="utf-8") as f:
+                existing_prompts = json.load(f)
+            # Lọc trùng lặp index nếu có
+            seen = set()
+            unique_existing = []
+            for p in existing_prompts:
+                idx = p.get("index")
+                if idx is not None and idx not in seen:
+                    seen.add(idx)
+                    unique_existing.append(p)
+            existing_prompts = unique_existing
+        except Exception:
+            existing_prompts = []
+
+    # Xác định các chỉ số câu bị thiếu prompt
+    total_sentences = len(timing_data)
+    expected_indices = set(range(total_sentences))
+    existing_indices = {p.get("index") for p in existing_prompts if p.get("index") is not None}
+    missing_indices = expected_indices - existing_indices
+    
+    # ── 3. Chế độ bổ sung (Heal/Repair) nếu đã có sẵn một phần ──
+    if existing_prompts and missing_indices:
+        logger.info(f"🛠️  CHẾ ĐỘ TỰ SỬA CHỮA: Tìm thấy {len(existing_prompts)} prompt có sẵn. Thiếu {len(missing_indices)} chỉ số.")
+        logger.info(f"   Các chỉ số thiếu: {sorted(list(missing_indices))}")
+        
+        use_web = True
+        model = None
+        
+        # Gọi sinh bổ sung cho từng chỉ số thiếu
+        for idx in sorted(list(missing_indices)):
+            sentence = timing_data[idx]
+            new_prompt = _call_gemini_single(model, sentence, idx)
+            existing_prompts.append(new_prompt)
+            
+            # Lưu tạm sau mỗi câu để tránh mất mát dữ liệu
+            existing_prompts.sort(key=lambda x: x.get("index", 0))
+            for p in existing_prompts:
+                if "timestamp" not in p or not p["timestamp"]:
+                    p["timestamp"] = _seconds_to_mmss(timing_data[p["index"]]["start"])
+                    
+            with open(prompts_json_path, "w", encoding="utf-8") as f:
+                json.dump(existing_prompts, f, indent=2, ensure_ascii=False)
+                
+        # Cập nhật và lưu lại file TXT cuối cùng
+        all_prompts = existing_prompts
+        
+        # Ghi đè lại prompts.txt
+        prompts_txt_path = os.path.join(project_dir, "prompts.txt")
+        with open(prompts_txt_path, "w", encoding="utf-8") as f:
+            for i, p in enumerate(all_prompts):
+                timestamp = p.get("timestamp", "??:??")
+                prompt_text = p.get("prompt", "")
+                f.write(f"[{timestamp}] {prompt_text}")
+                if i < len(all_prompts) - 1:
+                    f.write("\n\n")
+                    
+        logger.info(f"✅ Tự sửa chữa hoàn tất! Đã cập nhật đủ {len(all_prompts)} prompt.")
+        return all_prompts
     
     # ── 2. Cấu hình Gemini hoặc Web Gemini ──
     use_web = True
