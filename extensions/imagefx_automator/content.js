@@ -34,36 +34,63 @@ function isShown(el) {
 }
 
 function findPromptInput() {
+  // 1. Thu thập tất cả các phần tử có khả năng là ô nhập liệu
   const selectors = [
+    'textarea',
     '[data-slate-editor="true"]',
     '[contenteditable="true"][role="textbox"]',
     '[role="textbox"][aria-multiline="true"]',
     'div[role="textbox"]',
     '[contenteditable="true"]',
-    '[contenteditable=""]',
-    "textarea",
+    '[contenteditable=""]'
   ];
+  
+  let candidates = [];
   for (const sel of selectors) {
-    const all = [...document.querySelectorAll(sel)];
-    if (!all.length) continue;
-    // Exclude elements belonging to the automator panel
-    const shown = all.filter(e => isShown(e) && !e.closest('.automator-panel') && !e.closest('#imagefx-automator-panel') && !e.closest('#aistudio-automator-panel'));
-    const list = shown.length ? shown : all.filter(e => !e.closest('.automator-panel') && !e.closest('#imagefx-automator-panel') && !e.closest('#aistudio-automator-panel'));
-    if (!list.length) continue;
-    
-    const hint = /create|prompt|imagine|describe|tạo|生成|描述|생성|作成/i;
-    const byText = list.find((e) =>
-      hint.test(
-        (e.getAttribute("placeholder") || "") +
-          (e.getAttribute("aria-label") || "") +
-          (e.dataset?.placeholder || "")
-      )
-    );
-    if (byText) return byText;
-    list.sort((a, b) => area(b) - area(a));
-    return list[0];
+    const elements = Array.from(document.querySelectorAll(sel));
+    for (const el of elements) {
+      // Bỏ qua các phần tử thuộc automator panels
+      if (el.closest('.automator-panel') || el.closest('#imagefx-automator-panel') || el.closest('#aistudio-automator-panel')) {
+        continue;
+      }
+      if (!candidates.includes(el)) {
+        candidates.push(el);
+      }
+    }
   }
-  return null;
+  
+  if (candidates.length === 0) return null;
+  
+  // 2. Tìm kiếm theo mức độ ưu tiên:
+  // Ưu tiên 1: Có placeholder hoặc aria-label chứa các từ khóa liên quan đến sinh ảnh
+  const hint = /prompt|imagine|describe|create|write|tạo|nhập|lời nhắc|mô tả|sinh|生成|描述/i;
+  const bestMatch = candidates.find(el => {
+    const attrs = [
+      el.getAttribute("placeholder"),
+      el.getAttribute("aria-label"),
+      el.getAttribute("title"),
+      el.dataset?.placeholder,
+      el.innerText
+    ].filter(Boolean).join(" ").toLowerCase();
+    return hint.test(attrs);
+  });
+  if (bestMatch) return bestMatch;
+  
+  // Ưu tiên 2: Thẻ textarea hiển thị
+  const visibleTextarea = candidates.find(el => el.tagName === "TEXTAREA" && isShown(el));
+  if (visibleTextarea) return visibleTextarea;
+  
+  // Ưu tiên 3: Phần tử contenteditable hiển thị
+  const visibleEditable = candidates.find(el => (el.isContentEditable || el.getAttribute("contenteditable") !== null) && isShown(el));
+  if (visibleEditable) return visibleEditable;
+  
+  // Ưu tiên 4: Thẻ textarea bất kỳ
+  const anyTextarea = candidates.find(el => el.tagName === "TEXTAREA");
+  if (anyTextarea) return anyTextarea;
+  
+  // Ưu tiên 5: Phần tử lớn nhất
+  candidates.sort((a, b) => area(b) - area(a));
+  return candidates[0];
 }
 
 async function wakePromptBox() {
@@ -74,9 +101,13 @@ async function wakePromptBox() {
     await sleep(150);
     return findPromptInput();
   }
-  const arrow = [...document.querySelectorAll('button, [role="button"]')].find(
+  let arrow = [...document.querySelectorAll('button, [role="button"]')].find(
     (b) => /arrow_forward/i.test((b.getAttribute("aria-label") || "") + b.textContent)
   );
+  if (!arrow) {
+    // Dự phòng tìm nút Generate/Tạo trên ImageFX
+    arrow = findGenerateButton(null);
+  }
   if (arrow) {
     const r = arrow.getBoundingClientRect();
     const points = [
