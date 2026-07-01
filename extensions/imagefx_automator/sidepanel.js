@@ -414,7 +414,8 @@ async function startAutomation() {
     if (!isRunning) break;
     
     if (!submitResp || !submitResp.ok) {
-      log(`Gửi prompt #${i} sang tab thất bại! (Nhớ đóng F12 DevTools và đảm bảo không có popup chặn)`, "error");
+      const errMsg = (submitResp && submitResp.error) ? submitResp.error : "Không thể kết nối hoặc gửi tin nhắn sang tab.";
+      log(`Gửi prompt #${i} sang tab thất bại! Chi tiết: ${errMsg}`, "error");
       if (qitem) qitem.className = "qitem error";
       await sleep(4000);
       continue;
