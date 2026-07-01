@@ -170,100 +170,40 @@ async function wakePromptBox() {
 }
 
 function setPromptText(el, text) {
-  sendDebugLog(`Bắt đầu điền prompt. Độ dài text: ${text.length}`);
-  
-  try {
-    const r = el.getBoundingClientRect();
-    const x = r.left + r.width / 2;
-    const y = r.top + r.height / 2;
-    sendDebugLog(`Giả lập click tọa độ trung tâm (${x.toFixed(1)}, ${y.toFixed(1)})`);
-    ["mousedown", "mouseup", "click"].forEach((t) => {
-      (document.elementFromPoint(x, y) || el).dispatchEvent(
-        new MouseEvent(t, { bubbles: true, cancelable: true, clientX: x, clientY: y, view: window })
-      );
-    });
-    el.focus?.();
-    sendDebugLog("Đã gọi el.focus()");
-  } catch (e) {
-    sendDebugLog(`Lỗi click/focus: ${e.message}`, "error");
-  }
+  sendDebugLog(`Bắt đầu điền prompt. Độ dài text: ${text.length}, TAG=${el.tagName}, isCE=${el.isContentEditable}`);
   
   if (el.isContentEditable || el.getAttribute("data-slate-editor") === "true") {
-    sendDebugLog("Định dạng: ContentEditable / Slate editor");
+    // Slate/ContentEditable: dùng execCommand (đúng cách h2dev_flow)
+    el.focus();
     try {
-      sendDebugLog("Thử cách 1: execCommand selectAll + insertText");
-      const s1 = document.execCommand('selectAll', false);
-      const s2 = document.execCommand('insertText', false, text);
-      sendDebugLog(`Kết quả execCommand: selectAll=${s1}, insertText=${s2}`);
+      const selection = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      
+      document.execCommand('delete', false);
+      document.execCommand('insertText', false, text);
+      
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      sendDebugLog("Đã điền bằng execCommand (Slate/CE).");
+      return;
     } catch (e) {
       sendDebugLog(`Lỗi execCommand: ${e.message}`, "warning");
     }
-  } else {
-    sendDebugLog("Định dạng: TEXTAREA hoặc INPUT");
-    try {
-      // Đánh thức ô nhập bằng cách gửi sự kiện nhấn phím giả lập
-      el.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "a", code: "KeyA" }));
-      
-      // 1. Dispatch beforeinput
-      el.dispatchEvent(new InputEvent("beforeinput", {
-        inputType: "insertText",
-        data: text,
-        bubbles: true,
-        cancelable: true,
-        composed: true,
-      }));
-      
-      // 2. Gán trực tiếp qua value setter
-      const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-      const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
-      if (setter) setter.call(el, text);
-      else el.value = text;
-      
-      // React 16+ Value Tracker Bypass
-      const tracker = el._valueTracker;
-      if (tracker) {
-        tracker.setValue('');
-        sendDebugLog("Đã bypass React _valueTracker.");
-      }
-      
-      // 3. Dispatch TextEvent (Mô phỏng nhập văn bản chuẩn Chrome)
-      try {
-        const textEvent = document.createEvent("TextEvent");
-        textEvent.initTextEvent("textInput", true, true, window, text);
-        el.dispatchEvent(textEvent);
-        sendDebugLog("Đã dispatch TextEvent (textInput).");
-      } catch (err) {
-        sendDebugLog(`Lỗi gửi TextEvent: ${err.message}`, "warning");
-      }
-      
-      // 4. Dispatch KeyboardEvent keyup sau khi nhập
-      el.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, cancelable: true, key: "a", code: "KeyA" }));
-      
-      // 5. Dispatch input và change events
-      el.dispatchEvent(new InputEvent("input", {
-        inputType: "insertText",
-        data: text,
-        bubbles: true,
-        cancelable: true,
-        composed: true,
-      }));
-      el.dispatchEvent(new Event('change', { bubbles: true }));
-      sendDebugLog("Đã hoàn thành chuỗi sự kiện gõ chữ.");
-    } catch (e) {
-      sendDebugLog(`Lỗi gán trực tiếp: ${e.message}`, "error");
-    }
   }
   
-  const finalLen = inputText(el).trim().length;
-  sendDebugLog(`Độ dài chữ cuối cùng trong ô prompt: ${finalLen}`);
-  
-  // Hỗ trợ tự động submit form nếu có
-  try {
-    const form = el.closest('form');
-    if (form) {
-      sendDebugLog("Tìm thấy form bao quanh. Thiết lập click/submit dự phòng.");
-    }
-  } catch (_) {}
+  // Input/Textarea: dùng native value setter (đúng cách h2dev_flow)
+  const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+  if (setter) setter.call(el, text);
+  else el.value = text;
+  el.dispatchEvent(
+    new InputEvent("input", { bubbles: true, composed: true, data: text, inputType: "insertText" })
+  );
+  el.dispatchEvent(new Event("change", { bubbles: true }));
+  sendDebugLog("Đã điền bằng native setter (input/textarea).");
 }
 
 function inputText(el) {
@@ -466,7 +406,7 @@ if (!window.__DVA_LISTENER_REGISTERED__) {
         try {
           // 1. Chụp baseline ảnh cũ trước khi gửi prompt mới
           window.__imagefx_baseline = new Set(getCompletedImages().map(srcKey));
-          console.log(`[Task #${msg.index}] Chụp baseline cũ. Số lượng: ${window.__imagefx_baseline.size} ảnh.`);
+          sendDebugLog(`[Task #${msg.index}] Chụp baseline cũ. Số lượng: ${window.__imagefx_baseline.size} ảnh.`);
           
           // 2. Tìm và đánh thức ô nhập liệu
           let input = await wakePromptBox();
@@ -475,49 +415,58 @@ if (!window.__DVA_LISTENER_REGISTERED__) {
             return;
           }
           
-          // 3. Focus và điền prompt
+          sendDebugLog(`Ô prompt: TAG=${input.tagName}, role=${input.getAttribute("role")}, isCE=${input.isContentEditable}`);
+          
+          // 3. Focus và điền prompt (theo cách h2dev_flow)
           clickFully(input);
-          input.focus();
-          await sleep(250);
+          input.focus?.();
+          await sleep(150);
           
           setPromptText(input, msg.prompt);
-          await sleep(1000); // Chờ React đồng bộ hóa trạng thái
+          await sleep(1500); // Chờ React/Wiz đồng bộ hóa trạng thái
           
           // Kiểm tra xem chữ đã thực sự được gõ vào chưa
           const got = inputText(input).trim();
-          console.log(`[Task #${msg.index}] Nội dung ô prompt sau khi gõ: "${got.slice(0, 60)}..." (Độ dài: ${got.length})`);
+          sendDebugLog(`Nội dung ô prompt sau khi gõ: "${got.slice(0, 60)}..." (${got.length} ký tự)`);
           
           if (got.length < 3) {
-            sendResponse({ ok: false, error: "Lỗi: Không thể điền văn bản vào ô prompt (Slate Editor không nhận ký tự)." });
+            sendResponse({ ok: false, error: "Không thể điền văn bản vào ô prompt (Slate/input không nhận ký tự)." });
             return;
           }
           
-          // 4. Bấm nút Tạo / Gửi
-          const clicked = clickGenerateButton(input);
-          if (clicked) {
-            // Chờ một chút xem ô prompt có được xóa trống không (dấu hiệu submit thành công)
-            await sleep(800);
-            const afterClickText = inputText(input).trim();
-            if (afterClickText.length < 3) {
-              sendResponse({ ok: true, note: "Click nút Generate thành công." });
+          // 4. Gửi prompt CHẮC CHẮN: thử lại nhiều lần (cơ chế h2dev_flow)
+          const arrow = findGenerateButton(input);
+          sendDebugLog(`Nút gửi: ${arrow ? (arrow.textContent.trim().slice(0, 20) || arrow.tagName) : "KHÔNG THẤY"}`);
+          
+          for (let i = 0; i < 10; i++) {
+            // 4a. Ưu tiên Enter (giống khi người dùng tự bấm Enter)
+            input.focus?.();
+            pressEnter(input);
+            await sleep(700);
+            if (inputText(input).trim().length < 3) {
+              sendDebugLog(`✅ Gửi thành công bằng ENTER (lần ${i + 1})`);
+              sendResponse({ ok: true, note: `Submit bằng Enter lần ${i + 1}` });
               return;
             }
+            
+            // 4b. Enter chưa ăn -> thử click nút mũi tên
+            if (arrow) {
+              clickFully(arrow);
+              await sleep(700);
+              if (inputText(input).trim().length < 3) {
+                sendDebugLog(`✅ Gửi thành công bằng CLICK nút (lần ${i + 1})`);
+                sendResponse({ ok: true, note: `Submit bằng click nút lần ${i + 1}` });
+                return;
+              }
+            }
+            
+            sendDebugLog(`Lần thử ${i + 1}/10: chưa gửi được, thử lại...`);
           }
           
-          // Nếu click nút không được hoặc không xóa trống, thử Enter dự phòng
-          console.log(`[Task #${msg.index}] Nút click thất bại hoặc không gửi được. Thử gửi bằng phím Enter...`);
-          pressEnter(input);
-          await sleep(1000);
-          
-          const afterEnterText = inputText(input).trim();
-          if (afterEnterText.length < 3) {
-            sendResponse({ ok: true, note: "Submit bằng phím Enter dự phòng thành công." });
-          } else {
-            sendResponse({ 
-              ok: false, 
-              error: "Không thể gửi prompt. Đã click nút Tạo và nhấn Enter nhưng nội dung văn bản vẫn còn trong ô nhập liệu." 
-            });
-          }
+          sendResponse({ 
+            ok: false, 
+            error: "Không thể gửi prompt sau 10 lần thử. Ô nhập vẫn còn chữ." 
+          });
         } catch (e) {
           sendResponse({ ok: false, error: "Lỗi ngoại lệ trong content script: " + String(e) });
         }
