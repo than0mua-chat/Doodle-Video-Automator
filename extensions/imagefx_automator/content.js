@@ -139,19 +139,23 @@ async function wakePromptBox() {
 }
 
 function setPromptText(el, text) {
-  // Focus ô nhập trước
-  try { el.focus?.(); } catch (_) {}
+  // Focus và click vào giữa editor để Slate khởi tạo Selection Model
+  try {
+    const r = el.getBoundingClientRect();
+    const x = r.left + r.width / 2;
+    const y = r.top + r.height / 2;
+    ["mousedown", "mouseup", "click"].forEach((t) => {
+      (document.elementFromPoint(x, y) || el).dispatchEvent(
+        new MouseEvent(t, { bubbles: true, cancelable: true, clientX: x, clientY: y, view: window })
+      );
+    });
+    el.focus?.();
+  } catch (_) {}
   
-  // Cách 1: execCommand (chuẩn cho contenteditable)
+  // Cách 1: execCommand với selectAll để bảo tồn DOM tree của Slate
   if (el.isContentEditable || el.getAttribute("data-slate-editor") === "true") {
     try {
-      const selection = window.getSelection();
-      const range = document.createRange();
-      range.selectNodeContents(el);
-      selection.removeAllRanges();
-      selection.addRange(range);
-      
-      document.execCommand('delete', false);
+      document.execCommand('selectAll', false);
       document.execCommand('insertText', false, text);
     } catch (e) {
       console.warn("Lỗi execCommand:", e);
