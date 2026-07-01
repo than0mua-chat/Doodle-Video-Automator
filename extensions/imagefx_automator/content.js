@@ -45,6 +45,7 @@ function isShown(el) {
 function findPromptInput() {
   sendDebugLog("Đang quét tìm ô nhập prompt...");
   const selectors = [
+    'input',
     'textarea',
     '[data-slate-editor="true"]',
     '[contenteditable="true"][role="textbox"]',
