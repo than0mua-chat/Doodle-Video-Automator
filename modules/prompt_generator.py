@@ -413,26 +413,41 @@ def generate_image_prompts(project_dir: str) -> list[dict]:
     
     # ── 3. Chế độ bổ sung (Heal/Repair) nếu đã có sẵn một phần ──
     if existing_prompts and missing_indices:
+        import itertools
+        
+        # Nhóm các chỉ số thiếu liên tiếp thành từng cụm
+        sorted_missing = sorted(list(missing_indices))
+        grouped_missing = []
+        for k, g in itertools.groupby(enumerate(sorted_missing), lambda ix: ix[0] - ix[1]):
+            grouped_missing.append(list(map(lambda x: x[1], g)))
+            
         logger.info(f"🛠️  CHẾ ĐỘ TỰ SỬA CHỮA: Tìm thấy {len(existing_prompts)} prompt có sẵn. Thiếu {len(missing_indices)} chỉ số.")
-        logger.info(f"   Các chỉ số thiếu: {sorted(list(missing_indices))}")
+        logger.info(f"   Đã phân nhóm các chỉ số thiếu thành {len(grouped_missing)} cụm liên tiếp để sinh theo batch.")
         
         use_web = True
         model = None
         
-        # Gọi sinh bổ sung cho từng chỉ số thiếu
-        for idx in sorted(list(missing_indices)):
-            sentence = timing_data[idx]
-            new_prompt = _call_gemini_single(model, sentence, idx)
-            existing_prompts.append(new_prompt)
-            
-            # Lưu tạm sau mỗi câu để tránh mất mát dữ liệu
-            existing_prompts.sort(key=lambda x: x.get("index", 0))
-            for p in existing_prompts:
-                if "timestamp" not in p or not p["timestamp"]:
-                    p["timestamp"] = _seconds_to_mmss(timing_data[p["index"]]["start"])
-                    
-            with open(prompts_json_path, "w", encoding="utf-8") as f:
-                json.dump(existing_prompts, f, indent=2, ensure_ascii=False)
+        # Gọi sinh bổ sung theo batch cho từng cụm liên tiếp
+        for group in grouped_missing:
+            group_size = len(group)
+            for b_idx in range(0, group_size, BATCH_SIZE):
+                batch_indices = group[b_idx:b_idx + BATCH_SIZE]
+                batch_start = batch_indices[0]
+                batch_sentences = [timing_data[idx] for idx in batch_indices]
+                
+                logger.info(f"   👉 Sinh bổ sung theo batch cho các câu #{batch_start} đến #{batch_indices[-1]} (size={len(batch_indices)})...")
+                new_prompts = _call_gemini_batch(model, batch_sentences, batch_offset=batch_start, batch_info="Bổ sung")
+                existing_prompts.extend(new_prompts)
+                
+                # Sắp xếp và cập nhật timestamp
+                existing_prompts.sort(key=lambda x: x.get("index", 0))
+                for p in existing_prompts:
+                    if "timestamp" not in p or not p["timestamp"]:
+                        p["timestamp"] = _seconds_to_mmss(timing_data[p["index"]]["start"])
+                        
+                # Lưu tạm để tránh mất mát dữ liệu
+                with open(prompts_json_path, "w", encoding="utf-8") as f:
+                    json.dump(existing_prompts, f, indent=2, ensure_ascii=False)
                 
         # Cập nhật và lưu lại file TXT cuối cùng
         all_prompts = existing_prompts
