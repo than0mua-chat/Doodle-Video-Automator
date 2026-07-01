@@ -554,9 +554,36 @@ def get_project_details(name: str):
     if os.path.exists(prompts_path):
         try:
             with open(prompts_path, "r", encoding="utf-8") as f:
-                prompts = json.load(f)
-        except Exception:
-            pass
+                raw_prompts = json.load(f)
+            
+            # Tự động loại bỏ các prompt trùng lặp index nếu có
+            unique_prompts = []
+            seen_indices = set()
+            has_duplicates = False
+            for p in raw_prompts:
+                if isinstance(p, dict):
+                    idx = p.get("index")
+                else:
+                    idx = None
+                
+                if idx is not None:
+                    if idx not in seen_indices:
+                        seen_indices.add(idx)
+                        unique_prompts.append(p)
+                    else:
+                        has_duplicates = True
+                else:
+                    unique_prompts.append(p)
+            
+            prompts = unique_prompts
+            
+            # Ghi đè lại nếu có trùng lặp để dọn dẹp file
+            if has_duplicates:
+                print(f"[Dọn dẹp] Phát hiện và loại bỏ các prompt trùng lặp index trong {prompts_path}")
+                with open(prompts_path, "w", encoding="utf-8") as f:
+                    json.dump(prompts, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print(f"Lỗi đọc/dọn dẹp prompts.json: {e}")
 
     # 5. Đếm hình ảnh trong thư mục images/ và nhóm theo phiên bản
     images_dir = os.path.join(project_dir, "images")

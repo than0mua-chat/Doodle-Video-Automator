@@ -349,7 +349,15 @@ def generate_image_prompts(project_dir: str) -> list[dict]:
             all_prompts.extend(batch_prompts)
             
             # Ghi nhận kết quả từng phần (mỗi khi xong 1 batch) để frontend nhận diện được ngay
-            partial_prompts = sorted(all_prompts, key=lambda x: x.get("index", 0))
+            unique_partial = []
+            seen_partial_indices = set()
+            for p in sorted(all_prompts, key=lambda x: x.get("index", 0)):
+                idx = p.get("index", 0)
+                if idx not in seen_partial_indices:
+                    seen_partial_indices.add(idx)
+                    unique_partial.append(p)
+            partial_prompts = unique_partial
+            
             for p in partial_prompts:
                 if "timestamp" not in p or not p["timestamp"]:
                     idx = p.get("index", 0)
@@ -372,8 +380,15 @@ def generate_image_prompts(project_dir: str) -> list[dict]:
             except Exception as save_err:
                 logger.warning(f"Không thể lưu kết quả từng phần: {save_err}")
     
-    # ── 4. Sắp xếp theo index ──
-    all_prompts.sort(key=lambda x: x.get("index", 0))
+    # ── 4. Sắp xếp và loại bỏ trùng lặp index ──
+    unique_all = []
+    seen_all_indices = set()
+    for p in sorted(all_prompts, key=lambda x: x.get("index", 0)):
+        idx = p.get("index", 0)
+        if idx not in seen_all_indices:
+            seen_all_indices.add(idx)
+            unique_all.append(p)
+    all_prompts = unique_all
     
     # ── 5. Đảm bảo mỗi prompt có timestamp ──
     for p in all_prompts:
