@@ -677,6 +677,41 @@ function initWorkspaceControls() {
     document.getElementById('btn-stop-pipeline').addEventListener('click', () => {
         stopPipeline();
     });
+
+    // Lưu YouTube SEO Metadata
+    const saveMetadataBtn = document.getElementById('btn-save-metadata');
+    if (saveMetadataBtn) {
+        saveMetadataBtn.addEventListener('click', () => {
+            const title = document.getElementById('yt-title-input').value.trim();
+            const desc = document.getElementById('yt-desc-textarea').value.trim();
+            const tagsRaw = document.getElementById('yt-tags-input').value.trim();
+            const tags = tagsRaw ? tagsRaw.split(',').map(t => t.trim()).filter(Boolean) : [];
+            
+            saveMetadataBtn.disabled = true;
+            saveMetadataBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang lưu...';
+            
+            fetch(`/api/projects/${state.currentProjectName}/metadata`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title, description: desc, tags })
+            })
+            .then(res => res.json())
+            .then(res => {
+                saveMetadataBtn.disabled = false;
+                saveMetadataBtn.innerHTML = '<i class="fa-solid fa-save"></i> Lưu Metadata';
+                if (res.status === 'success') {
+                    showToast('Đã lưu YouTube SEO Metadata!', 'success');
+                } else {
+                    showToast('Lỗi lưu metadata: ' + (res.detail || 'Lỗi không xác định'), 'danger');
+                }
+            })
+            .catch(err => {
+                saveMetadataBtn.disabled = false;
+                saveMetadataBtn.innerHTML = '<i class="fa-solid fa-save"></i> Lưu Metadata';
+                showToast('Lỗi kết nối: ' + err.message, 'danger');
+            });
+        });
+    }
 }
 
 let galleryPollInterval = null;
@@ -721,10 +756,47 @@ function switchWorkspaceStep(step) {
     document.querySelectorAll('.stage-view-container').forEach(view => {
         view.classList.remove('active');
     });
-    document.getElementById(`stage-view-${step}`).classList.add('active');
+    const targetView = document.getElementById(`stage-view-${step}`);
+    if (targetView) targetView.classList.add('active');
+
+    // Nếu chuyển sang Stage 7 (Đăng YouTube), tải metadata
+    if (step === 7) {
+        loadProjectMetadata();
+    }
 
     // Cập nhật mô tả hoạt động bên trái
     updateWorkspaceControlPanel(step);
+}
+
+async function loadProjectMetadata() {
+    if (!state.currentProjectName) return;
+    const titleInput = document.getElementById('yt-title-input');
+    const descTextarea = document.getElementById('yt-desc-textarea');
+    const tagsInput = document.getElementById('yt-tags-input');
+    
+    if (!titleInput || !descTextarea || !tagsInput) return;
+    
+    titleInput.value = '';
+    titleInput.placeholder = 'Đang tải hoặc tự sinh SEO Title...';
+    descTextarea.value = '';
+    descTextarea.placeholder = 'Đang tải hoặc tự sinh SEO Description...';
+    tagsInput.value = '';
+    tagsInput.placeholder = 'Đang tải SEO Tags...';
+    
+    try {
+        const res = await fetch(`/api/projects/${state.currentProjectName}/metadata`);
+        if (res.ok) {
+            const data = await res.json();
+            if (data.status === 'success' && data.metadata) {
+                titleInput.value = data.metadata.title || '';
+                descTextarea.value = data.metadata.description || '';
+                tagsInput.value = (data.metadata.tags || []).join(', ');
+            }
+        }
+    } catch (err) {
+        console.error("Lỗi khi tải metadata:", err);
+        showToast("Lỗi tải YouTube SEO Metadata", "danger");
+    }
 }
 
 function updateWorkspaceControlPanel(step) {
@@ -757,6 +829,11 @@ function updateWorkspaceControlPanel(step) {
             title: 'Giai đoạn 6: Ghép và dựng video',
             desc: 'Ghép nối tất cả âm thanh, hình ảnh và tạo hiệu ứng nhấp nhô rung lắc hoạt hình sống động thành tệp video .mp4.',
             icon: 'fa-film'
+        },
+        7: {
+            title: 'Giai đoạn 7: Đăng video lên YouTube',
+            desc: 'Tự động tạo tiêu đề/mô tả chuẩn SEO bằng Gemini và điều khiển Chrome tự động tải video lên YouTube Studio.',
+            icon: 'fa-cloud-arrow-up'
         }
     };
 

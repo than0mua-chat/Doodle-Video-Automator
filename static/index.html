@@ -322,6 +322,11 @@
                         <span class="step-num">6</span>
                         <span class="step-name">Dựng video</span>
                     </div>
+                    <div class="step-line"></div>
+                    <div class="step-node" data-step="7">
+                        <span class="step-num">7</span>
+                        <span class="step-name">Đăng YouTube</span>
+                    </div>
                 </div>
 
                 <!-- Workspace Body Split -->
@@ -358,6 +363,7 @@
                                 <div class="dropdown-item" data-run-stage="4"><i class="fa-solid fa-wand-magic-sparkles text-orange"></i> Chạy Giai đoạn 4: Tạo prompts ảnh</div>
                                 <div class="dropdown-item" data-run-stage="5"><i class="fa-solid fa-images text-orange"></i> Chạy Giai đoạn 5: Tải/Tạo ảnh</div>
                                 <div class="dropdown-item" data-run-stage="6"><i class="fa-solid fa-film text-orange"></i> Chạy Giai đoạn 6: Dựng video</div>
+                                <div class="dropdown-item" data-run-stage="7"><i class="fa-solid fa-cloud-arrow-up text-orange"></i> Chạy Giai đoạn 7: Đăng YouTube</div>
                             </div>
                         </div>
 
@@ -533,6 +539,35 @@
                                         <i class="fa-solid fa-video-slash"></i>
                                         <p>Chưa dựng video final_video.mp4. Hãy chạy Giai đoạn 6 ở bảng bên trái.</p>
                                     </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Stage 7 Area: YouTube Upload -->
+                        <div class="stage-view-container" id="stage-view-7">
+                            <div class="view-header" style="display: flex; justify-content: space-between; align-items: center;">
+                                <h3><i class="fa-solid fa-cloud-arrow-up text-accent"></i> YouTube SEO Metadata & Đăng tải</h3>
+                                <button class="btn btn-accent btn-small" id="btn-save-metadata" style="display: flex; align-items: center; gap: 6px;">
+                                    <i class="fa-solid fa-save"></i> Lưu Metadata
+                                </button>
+                            </div>
+                            <div class="view-body">
+                                <div class="glass-card" style="padding: 16px; margin-bottom: 16px;">
+                                    <div class="form-group" style="margin-bottom: 16px;">
+                                        <label for="yt-title-input" style="font-weight: 600; display: block; margin-bottom: 6px; color: var(--text-primary);"><i class="fa-solid fa-heading text-accent"></i> Tiêu đề Video YouTube (SEO Title - Dưới 100 kí tự)</label>
+                                        <input type="text" id="yt-title-input" class="profile-input" style="width: 100%; border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-primary); border-radius: 6px; padding: 8px;" placeholder="Đang tải tiêu đề YouTube..." />
+                                    </div>
+                                    <div class="form-group" style="margin-bottom: 16px;">
+                                        <label for="yt-desc-textarea" style="font-weight: 600; display: block; margin-bottom: 6px; color: var(--text-primary);"><i class="fa-solid fa-align-left text-accent"></i> Mô tả Video YouTube (SEO Description - Thêm chapters/hashtags)</label>
+                                        <textarea id="yt-desc-textarea" rows="12" class="script-editor-textarea" style="width: 100%; font-family: inherit; border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-primary); border-radius: 6px; padding: 10px;" placeholder="Đang tải mô tả YouTube..."></textarea>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="yt-tags-input" style="font-weight: 600; display: block; margin-bottom: 6px; color: var(--text-primary);"><i class="fa-solid fa-tags text-accent"></i> Thẻ từ khóa YouTube (SEO Tags - Phân cách bằng dấu phẩy)</label>
+                                        <input type="text" id="yt-tags-input" class="profile-input" style="width: 100%; border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-primary); border-radius: 6px; padding: 8px;" placeholder="keyword1, keyword2, keyword3..." />
+                                    </div>
+                                </div>
+                                <div class="tip" style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.2); color: var(--text-muted); font-size: 12.5px; border-radius: 8px; padding: 12px; line-height: 1.5;">
+                                    <i class="fa-solid fa-circle-info text-green"></i> <strong>Hướng dẫn:</strong> Bạn có thể chỉnh sửa Tiêu đề, Mô tả và Thẻ Tags ở trên rồi bấm <strong>"Lưu Metadata"</strong>. Khi chạy Giai đoạn 7, hệ thống sẽ tự động sử dụng cấu hình này để đăng video lên kênh của bạn qua trình duyệt tự động hóa!
                                 </div>
                             </div>
                         </div>

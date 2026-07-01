@@ -907,6 +907,65 @@ def get_project_file(name: str, path: str = Query(...)):
     return FileResponse(requested_path)
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# API QUẢN LÝ METADATA YOUTUBE
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+class YouTubeMetadataPayload(BaseModel):
+    title: str
+    description: str
+    tags: list[str]
+
+@app.get("/api/projects/{name}/metadata")
+def get_project_metadata(name: str):
+    """Lấy YouTube SEO Metadata (tiêu đề, mô tả, tags). Tự sinh nếu chưa có."""
+    project_dir = os.path.join(config.BASE_OUTPUT_DIR, name)
+    if not os.path.exists(project_dir):
+        raise HTTPException(status_code=404, detail="Dự án không tồn tại")
+
+    metadata_path = os.path.join(project_dir, "metadata.json")
+    if os.path.exists(metadata_path):
+        try:
+            with open(metadata_path, "r", encoding="utf-8") as f:
+                metadata = json.load(f)
+            return {"status": "success", "metadata": metadata}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Lỗi đọc metadata.json: {e}")
+
+    # Tự động sinh nếu chưa có
+    try:
+        from modules.youtube_uploader import generate_youtube_metadata
+        metadata = generate_youtube_metadata(project_dir)
+        return {"status": "success", "metadata": metadata}
+    except Exception as e:
+        # Trả về fallback tạm thời nếu lỗi Gemini
+        fallback = {
+            "title": name.replace("_", " ").title(),
+            "description": "Video được tạo tự động bởi Doodle Video Automator.",
+            "tags": ["doodle video", "explainer video"]
+        }
+        return {"status": "success", "metadata": fallback, "warning": str(e)}
+
+@app.post("/api/projects/{name}/metadata")
+def save_project_metadata(name: str, payload: YouTubeMetadataPayload):
+    """Lưu YouTube SEO Metadata của dự án."""
+    project_dir = os.path.join(config.BASE_OUTPUT_DIR, name)
+    if not os.path.exists(project_dir):
+        raise HTTPException(status_code=404, detail="Dự án không tồn tại")
+
+    metadata_path = os.path.join(project_dir, "metadata.json")
+    try:
+        data = {
+            "title": payload.title,
+            "description": payload.description,
+            "tags": payload.tags
+        }
+        with open(metadata_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        return {"status": "success", "message": "Đã lưu YouTube SEO Metadata!"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Không thể lưu metadata.json: {e}")
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # API CHẠY PIPELINE (STAGE RUNNER)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -928,8 +987,8 @@ def run_stage(name: str, payload: RunStagePayload, background_tasks: BackgroundT
         )
 
     stage = payload.stage
-    if stage not in [2, 3, 4, 5, 6]:
-        raise HTTPException(status_code=400, detail="Stage không hợp lệ (Chỉ hỗ trợ chạy Stage 2 đến Stage 6 từ giao diện)")
+    if stage not in [2, 3, 4, 5, 6, 7]:
+        raise HTTPException(status_code=400, detail="Stage không hợp lệ (Chỉ hỗ trợ chạy Stage 2 đến Stage 7 từ giao diện)")
 
     # Kiểm tra tính sẵn sàng của API Keys trước khi chạy các stage gọi API
     if stage in [2, 4, 5] and config.IMAGE_MODE == "api":

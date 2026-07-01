@@ -393,6 +393,24 @@ def stage_6_video_compilation(project_dir: str, force: bool = False):
     _update_project_stage(project_dir, 6)
 
 
+def stage_7_youtube_upload(project_dir: str, force: bool = False):
+    """Giai đoạn 7: Đăng video lên YouTube."""
+    print_stage(7, "ĐĂNG VIDEO LÊN YOUTUBE")
+    
+    privacy = config._get_setting("YOUTUBE_PRIVACY", "public")
+    print(f"  Đang chuẩn bị và đăng tải video lên YouTube ở chế độ: {privacy.upper()}")
+    
+    from modules.youtube_uploader import upload_video_sync
+    success = upload_video_sync(project_dir, privacy=privacy)
+    
+    if success:
+        print_success("Đăng video lên YouTube thành công!")
+        _update_project_stage(project_dir, 7)
+    else:
+        print_error("Đăng video lên YouTube thất bại.")
+        sys.exit(1)
+
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # TIỆN ÍCH DỰ ÁN
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -458,7 +476,8 @@ def list_projects():
     print(f"  {'─' * 40} {'─' * 12} {'─' * 40}")
     for name, title, stage in projects:
         stage_labels = {1: "1-Ý tưởng", 2: "2-Kịch bản", 3: "3-Âm thanh",
-                        4: "4-Prompts", 5: "5-Ảnh", 6: "6-Hoàn thành"}
+                        4: "4-Prompts", 5: "5-Ảnh", 6: "6-Hoàn thành",
+                        7: "7-Đăng YouTube"}
         stage_label = stage_labels.get(stage, f"Stage {stage}")
         print(f"  {name:<40} {stage_label:<12} {title[:40]}")
     print()
@@ -473,8 +492,8 @@ def main():
         description="🎬 Doodle Video Automation Pipeline — Tự động hóa sản xuất video hoạt hình người que"
     )
     parser.add_argument(
-        "--stage", type=int, choices=[1, 2, 3, 4, 5, 6],
-        help="Bắt đầu từ giai đoạn cụ thể (1-6)"
+        "--stage", type=int, choices=[1, 2, 3, 4, 5, 6, 7],
+        help="Bắt đầu từ giai đoạn cụ thể (1-7)"
     )
     parser.add_argument(
         "--project", type=str,
@@ -614,6 +633,12 @@ def main():
         # Giai đoạn 6: Dựng video
         if (start_stage == 6) or (not args.single_stage and start_stage <= 6):
             stage_6_video_compilation(project_dir, force=args.force)
+            if args.single_stage:
+                sys.exit(0)
+
+        # Giai đoạn 7: Đăng video lên YouTube
+        if (start_stage == 7) or (not args.single_stage and start_stage <= 7):
+            stage_7_youtube_upload(project_dir, force=args.force)
 
     except KeyboardInterrupt:
         print("\n\n  ⏹  Pipeline bị dừng bởi người dùng.")
