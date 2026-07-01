@@ -208,9 +208,13 @@ function setPromptText(el, text) {
 
 function inputText(el) {
   if (el.isContentEditable) {
-    if (el.querySelector("[data-slate-string], [data-slate-placeholder]")) {
-      return [...el.querySelectorAll("[data-slate-string]")].map((s) => s.textContent).join("");
+    // Thử đọc Slate text trước
+    const slateStrings = [...el.querySelectorAll("[data-slate-string]")];
+    if (slateStrings.length > 0) {
+      const slateVal = slateStrings.map((s) => s.textContent).join("");
+      if (slateVal.trim().length > 0) return slateVal;
     }
+    // Fallback: đọc innerText (bao gồm cả text do execCommand chèn)
     return el.innerText || el.textContent || "";
   }
   return el.value || "";
