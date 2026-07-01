@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Doodle Video Automator</title>
+    <link rel="stylesheet" href="sidepanel.css" />
+  </head>
+  <body>
+    <header class="head">
+      <div class="brand">
+        <span class="logo">⚡</span>
+        <div>
+          <h1>Doodle<span class="accent">_Video</span></h1>
+          <span class="ver">ImageFX Automator Panel · v2.0</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Kết nối Dashboard -->
+    <div id="conn" class="conn conn--off">
+      <span class="dot"></span>
+      <span id="connText">Đang kiểm tra kết nối Dashboard…</span>
+    </div>
+
+    <section class="block">
+      <label class="lbl" for="automator-host-input">Địa chỉ Dashboard URL</label>
+      <div class="row" style="margin-top: 0;">
+        <input id="automator-host-input" type="text" value="http://127.0.0.1:8085" placeholder="http://127.0.0.1:8085" />
+        <button id="connect-btn" class="btn" style="padding: 9px 12px; margin-top: 0;">Kết nối</button>
+      </div>
+    </section>
+
+    <!-- Thông tin dự án Active -->
+    <section class="block" id="project-info-block" style="display: none;">
+      <div style="background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px;">
+        <div style="font-weight: bold; font-size: 13px; margin-bottom: 4px;">Dự án: <span id="project-name" style="color: var(--accent);">—</span></div>
+        <div style="font-size: 11px; color: var(--muted); margin-bottom: 2px;">Niche: <span id="project-niche">—</span></div>
+        <div style="font-size: 11px; color: var(--muted);">Thư mục: <span id="project-dir" style="word-break: break-all;">—</span></div>
+      </div>
+    </section>
+
+    <!-- Tham số cấu hình -->
+    <section class="block">
+      <label class="lbl">Số lượng ảnh kết quả mỗi Prompt</label>
+      <div class="row" style="gap: 20px; margin-top: 4px;">
+        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+          <input type="radio" name="expected-count" value="2" checked style="width: auto; cursor: pointer;" />
+          <span>2 ảnh (Khuyên dùng)</span>
+        </label>
+        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+          <input type="radio" name="expected-count" value="4" style="width: auto; cursor: pointer;" />
+          <span>4 ảnh</span>
+        </label>
+      </div>
+    </section>
+
+    <section class="block">
+      <label class="lbl">Nghỉ ngẫu nhiên giữa các Prompt (giây)</label>
+      <div class="row delays" style="margin-top: 4px;">
+        <input id="delayMin" type="number" min="0" value="5" />
+        <span>đến</span>
+        <input id="delayMax" type="number" min="0" value="15" />
+      </div>
+      <p class="hint">Delay ngẫu nhiên giúp hành vi sinh ảnh tự nhiên hơn.</p>
+    </section>
+
+    <section class="block">
+      <div class="row" style="margin-top: 0; justify-content: space-between;">
+        <label class="lbl" style="margin-bottom: 0;">Lưu bản sao ảnh cục bộ (Downloads)</label>
+        <label class="switch">
+          <input id="saveLocal" type="checkbox" checked />
+          <span class="slider"></span>
+        </label>
+      </div>
+    </section>
+
+    <!-- Nút điều khiển chính -->
+    <div class="actions" style="margin-top: 15px;">
+      <button id="start-btn" class="btn btn--primary">Bắt đầu chạy</button>
+      <button id="retry-btn" class="btn" style="background: #e28743; color: #fff; border: none; display: none;">Thử lại</button>
+      <button id="stop-btn" class="btn btn--danger" disabled>Dừng</button>
+    </div>
+
+    <!-- Nhật ký chạy (Console Logs) -->
+    <section class="block">
+      <label class="lbl">Nhật ký tiến trình</label>
+      <div id="logs-console" class="logs-console">
+        <div class="log-line info">Bấm "Kết nối" để tải kịch bản dự án...</div>
+      </div>
+    </section>
+
+    <!-- Hàng đợi Prompt -->
+    <section class="block">
+      <div class="qhead">
+        <span class="lbl">Hàng đợi Prompt sinh ảnh</span>
+        <span id="progress" class="count">—</span>
+      </div>
+      <div class="pbar"><div id="pfill" class="pfill"></div></div>
+      <ul id="queue" class="queue">
+        <li style="text-align: center; color: var(--muted); padding: 20px 0; font-size: 11px;">Chưa kết nối dự án</li>
+      </ul>
+    </section>
+
+    <script src="sidepanel.js"></script>
+  </body>
+</html>

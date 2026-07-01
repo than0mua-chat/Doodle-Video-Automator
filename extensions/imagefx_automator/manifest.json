@@ -6,8 +6,15 @@
   "permissions": [
     "activeTab",
     "debugger",
-    "tabs"
+    "tabs",
+    "sidePanel",
+    "storage",
+    "downloads",
+    "scripting"
   ],
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
   "background": {
     "service_worker": "background.js"
   },

@@ -1,867 +1,364 @@
-/* =============================================================
-   CONTENT.JS — Chrome Extension cho Google ImageFX
-   Tự động hóa lấy prompts từ Dashboard và upload ảnh trực tiếp
-   ============================================================= */
+// ============================================================
+//  Doodle Video Automator — content.js
+//  Execution Agent: Wakes prompt boxes, types prompts, triggers
+//  generation, detects images, and relays data back to the sidepanel.
+// ============================================================
 
-// Khởi tạo Floating UI
 const seenImageUrls = new Set();
-let activeProject = null;
-let isRunning = false;
-let currentPromptIndex = 0;
-let dashboardUrl = 'http://127.0.0.1:8085';
-let expectedImageCount = 2; // Mặc định là 2 ảnh (theo phản hồi của người dùng)
+let dashboardUrl = "http://127.0.0.1:8085";
 
-// Lấy địa chỉ host hợp lệ từ localStorage
-function getValidatedHost() {
-    const saved = localStorage.getItem('imagefx_automator_host');
-    if (saved && (saved.startsWith('http://') || saved.startsWith('https://'))) {
-        return saved.trim();
-    }
-    return 'http://127.0.0.1:8085';
+// ---------- A. Helpers for ImageFX / Google Flow ----------
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function isVisible(el) {
+  if (!el) return false;
+  const r = el.getBoundingClientRect();
+  if (r.width === 0 || r.height === 0) return false;
+  const s = getComputedStyle(el);
+  return s.display !== "none" && s.visibility !== "hidden" && s.opacity !== "0";
 }
 
-// Tạo và nhúng Floating Panel vào ImageFX
-function createUI() {
-    // Nếu UI đã tồn tại thì không tạo lại
-    if (document.getElementById('imagefx-automator-panel')) return;
-
-    // Đọc số ảnh mong đợi lưu trữ trong localStorage nếu có
-    const savedCount = localStorage.getItem('imagefx_expected_count');
-    if (savedCount) {
-        expectedImageCount = parseInt(savedCount);
-    }
-
-    dashboardUrl = getValidatedHost();
-
-    const panel = document.createElement('div');
-    panel.id = 'imagefx-automator-panel';
-    panel.className = 'automator-panel';
-    panel.innerHTML = `
-        <div class="automator-header">
-            <span class="automator-title">🎨 ImageFX Automator</span>
-            <button class="automator-minimize-btn" id="automator-min-btn">−</button>
-        </div>
-        <div class="automator-body" id="automator-body">
-            <div class="automator-row">
-                <input type="text" id="automator-host-input" value="${dashboardUrl}" placeholder="Dashboard Host">
-                <button class="automator-btn" id="automator-connect-btn">Kết nối</button>
-            </div>
-            
-            <div class="automator-project-info" id="automator-project-info">
-                Chưa kết nối với Dashboard Doodle Video.
-            </div>
-
-            <div class="automator-controls hidden" id="automator-controls">
-                <div class="automator-mode-select" style="margin-top: 8px;">
-                    <span style="color: #9ca3af; font-size: 11px; margin-right: 8px;">Số ảnh/prompt:</span>
-                    <label>
-                        <input type="radio" name="expected-count" value="2" ${expectedImageCount === 2 ? 'checked' : ''}> 2 ảnh
-                    </label>
-                    <label style="margin-left: 10px;">
-                        <input type="radio" name="expected-count" value="4" ${expectedImageCount === 4 ? 'checked' : ''}> 4 ảnh
-                    </label>
-                </div>
-                
-                <div class="automator-actions-row" style="margin-top: 8px;">
-                    <button class="automator-btn btn-success" id="automator-start-btn">Bắt đầu chạy</button>
-                    <button class="automator-btn btn-danger hidden" id="automator-stop-btn">Dừng</button>
-                    <button class="automator-btn btn-warning" id="automator-retry-btn" title="Xóa ảnh cũ và sinh lại ảnh cho prompt hiện tại">Thử lại</button>
-                </div>
-            </div>
-
-            <div class="automator-logs" id="automator-logs">
-                [Hệ thống] Nhấp "Kết nối" để tải kịch bản dự án...
-            </div>
-
-            <div class="automator-prompts-list hidden" id="automator-prompts-list">
-                <!-- Danh sách prompts kết nối -->
-            </div>
-        </div>
-    `;
-
-    document.body.appendChild(panel);
-
-    // Bind events
-    document.getElementById('automator-connect-btn').addEventListener('click', connectDashboard);
-    document.getElementById('automator-min-btn').addEventListener('click', toggleMinimize);
-    document.getElementById('automator-start-btn').addEventListener('click', startAutomation);
-    document.getElementById('automator-stop-btn').addEventListener('click', stopAutomation);
-    document.getElementById('automator-retry-btn').addEventListener('click', handleRetryCurrentPrompt);
-    
-    // Lắng nghe sự thay đổi số ảnh mong đợi
-    document.querySelectorAll('input[name="expected-count"]').forEach(el => {
-        el.addEventListener('change', (e) => {
-            expectedImageCount = parseInt(e.target.value);
-            localStorage.setItem('imagefx_expected_count', expectedImageCount);
-            log(`Đã đổi số ảnh mong đợi mỗi prompt thành: ${expectedImageCount} ảnh`, 'warning');
-        });
-    });
-
-    // Đồng bộ giá trị host
-    document.getElementById('automator-host-input').value = dashboardUrl;
+function area(el) {
+  const r = el.getBoundingClientRect();
+  return r.width * r.height;
 }
 
-// Ẩn/Hiện Panel
-function toggleMinimize() {
-    const panel = document.getElementById('imagefx-automator-panel');
-    const body = document.getElementById('automator-body');
-    const btn = document.getElementById('automator-min-btn');
-    if (body.style.display === 'none') {
-        body.style.display = 'block';
-        if (panel) panel.classList.remove('minimized');
-        btn.textContent = '−';
-    } else {
-        body.style.display = 'none';
-        if (panel) panel.classList.add('minimized');
-        btn.textContent = '+';
-    }
+function srcKey(img) {
+  return img.currentSrc || img.src || "";
 }
 
-// Ghi log ra Panel
-function log(msg, type = 'info') {
-    const logBox = document.getElementById('automator-logs');
-    const time = new Date().toLocaleTimeString('vi-VN', { hour12: false });
-    const classMap = { info: '', success: 'text-success', error: 'text-danger', warning: 'text-warning' };
-    
-    logBox.innerHTML += `<div class="${classMap[type] || ''}">[${time}] ${msg}</div>`;
-    logBox.scrollTop = logBox.scrollHeight;
+function isShown(el) {
+  if (!el) return false;
+  if (isVisible(el)) return true;
+  return el.getClientRects().length > 0;
 }
 
-// Tìm chỉ mục prompt chưa có ảnh đầu tiên để hỗ trợ chạy tiếp tục (Resume)
-function getFirstMissingPromptIndex() {
-    if (!activeProject || !activeProject.prompts) return 0;
-    for (let i = 0; i < activeProject.prompts.length; i++) {
-        const fileName = `${i}.png`;
-        // Kiểm tra xem đã có ảnh chính cho prompt này chưa
-        const exists = activeProject.existing_images.includes(fileName);
-        if (!exists) {
-            return i;
-        }
-    }
-    return -1; // Tất cả đã hoàn thành
+function findPromptInput() {
+  const selectors = [
+    '[data-slate-editor="true"]',
+    '[contenteditable="true"][role="textbox"]',
+    '[role="textbox"][aria-multiline="true"]',
+    'div[role="textbox"]',
+    '[contenteditable="true"]',
+    '[contenteditable=""]',
+    "textarea",
+  ];
+  for (const sel of selectors) {
+    const all = [...document.querySelectorAll(sel)];
+    if (!all.length) continue;
+    // Exclude elements belonging to the automator panel
+    const shown = all.filter(e => isShown(e) && !e.closest('.automator-panel') && !e.closest('#imagefx-automator-panel') && !e.closest('#aistudio-automator-panel'));
+    const list = shown.length ? shown : all.filter(e => !e.closest('.automator-panel') && !e.closest('#imagefx-automator-panel') && !e.closest('#aistudio-automator-panel'));
+    if (!list.length) continue;
+    
+    const hint = /create|prompt|imagine|describe|tạo|生成|描述|생성|作成/i;
+    const byText = list.find((e) =>
+      hint.test(
+        (e.getAttribute("placeholder") || "") +
+          (e.getAttribute("aria-label") || "") +
+          (e.dataset?.placeholder || "")
+      )
+    );
+    if (byText) return byText;
+    list.sort((a, b) => area(b) - area(a));
+    return list[0];
+  }
+  return null;
 }
 
-// Kết nối lấy dữ liệu từ Dashboard
-async function connectDashboard() {
-    const hostInput = document.getElementById('automator-host-input').value.trim();
-    if (!hostInput) return;
-    
-    // Kiểm tra URL hợp lệ để tránh lưu nhầm prompt text vào localStorage
-    if (!hostInput.startsWith('http://') && !hostInput.startsWith('https://')) {
-        log(`URL không hợp lệ: "${hostInput.substring(0, 50)}...". Phải bắt đầu bằng http:// hoặc https://`, 'error');
-        document.getElementById('automator-host-input').value = dashboardUrl; // Khôi phục giá trị cũ
-        return;
+async function wakePromptBox() {
+  let ed = findPromptInput();
+  if (ed) {
+    clickFully(ed);
+    ed.focus?.();
+    await sleep(150);
+    return findPromptInput();
+  }
+  const arrow = [...document.querySelectorAll('button, [role="button"]')].find(
+    (b) => /arrow_forward/i.test((b.getAttribute("aria-label") || "") + b.textContent)
+  );
+  if (arrow) {
+    const r = arrow.getBoundingClientRect();
+    const points = [
+      [r.left - 150, r.top + r.height / 2],
+      [r.left - 300, r.top + r.height / 2],
+      [r.left - 80, r.top + r.height / 2],
+    ];
+    for (const [x, y] of points) {
+      const t = document.elementFromPoint(x, y);
+      if (!t) continue;
+      ["mousedown", "mouseup", "click"].forEach((type) =>
+        t.dispatchEvent(
+          new MouseEvent(type, {
+            bubbles: true,
+            cancelable: true,
+            view: window,
+            clientX: x,
+            clientY: y,
+          })
+        )
+      );
+      t.focus?.();
+      await sleep(250);
+      ed = findPromptInput();
+      if (ed) return ed;
     }
-    
-    dashboardUrl = hostInput;
-    localStorage.setItem('imagefx_automator_host', dashboardUrl);
-    
-    log(`Đang kết nối tới Dashboard tại ${dashboardUrl}...`);
-    
+  }
+  return findPromptInput();
+}
+
+function setPromptText(el, text) {
+  if (el.isContentEditable || el.getAttribute("data-slate-editor") === "true") {
+    el.focus();
     try {
-        const res = await fetch(`${dashboardUrl}/api/active-project`);
-        if (!res.ok) throw new Error("Không phản hồi");
-        
-        const data = await res.json();
-        if (data.status === 'error') {
-            log(data.message, 'error');
-            return;
-        }
-
-        activeProject = data;
-        log(`Đã kết nối! Dự án: "${data.info.topic_title}"`, 'success');
-        
-        // Hiển thị thông tin dự án
-        const infoBox = document.getElementById('automator-project-info');
-        infoBox.innerHTML = `
-            <div><strong>Dự án:</strong> ${data.info.topic_title}</div>
-            <div><strong>Thư mục:</strong> <code>output/${data.info.project_name}</code></div>
-            <div><strong>Tiến độ:</strong> Đã có ${data.images_count}/${data.prompts.length} ảnh</div>
-        `;
-
-        document.getElementById('automator-controls').classList.remove('hidden');
-        document.getElementById('automator-prompts-list').classList.remove('hidden');
-        
-        renderPromptsList();
-        
-        // Tự động tìm và chọn prompt chưa có ảnh đầu tiên để hỗ trợ chạy tiếp tục (Resume)
-        const firstMissing = getFirstMissingPromptIndex();
-        selectPrompt(firstMissing !== -1 ? firstMissing : 0);
+      const selection = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      
+      document.execCommand('delete', false);
+      document.execCommand('insertText', false, text);
+      
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      return;
     } catch (e) {
-        log(`Lỗi kết nối Dashboard! Hãy đảm bảo server đang chạy và không bị chặn CORS.`, 'error');
-        console.error(e);
+      console.error("Lỗi khi điền Slate Editor bằng execCommand:", e);
     }
+  }
+  const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+  if (setter) setter.call(el, text);
+  else el.value = text;
+  el.dispatchEvent(new InputEvent("input", { bubbles: true, composed: true, data: text, inputType: "insertText" }));
+  el.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
-// Hiển thị danh sách prompts
-function renderPromptsList() {
-    const container = document.getElementById('automator-prompts-list');
-    if (!activeProject || !activeProject.prompts) return;
-
-    container.innerHTML = '';
-    
-    const title = document.createElement('h4');
-    title.textContent = 'Danh sách hình ảnh:';
-    container.appendChild(title);
-
-    activeProject.prompts.forEach((p, idx) => {
-        const fileName = `${idx}.png`;
-        const exists = activeProject.existing_images.includes(fileName);
-        const statusClass = exists ? 'status-ready' : 'status-missing';
-        const statusText = exists ? 'Đã có' : 'Chưa có';
-
-        const item = document.createElement('div');
-        item.className = `automator-prompt-item ${statusClass}`;
-        item.id = `prompt-item-${idx}`;
-        item.innerHTML = `
-            <span class="prompt-idx">#${idx}</span>
-            <span class="prompt-text-preview" title="${p.prompt}">${p.prompt.substring(0, 50)}...</span>
-            <span class="prompt-status">${statusText}</span>
-        `;
-        item.addEventListener('click', () => {
-            selectPrompt(idx);
-        });
-        container.appendChild(item);
-    });
+function inputText(el) {
+  if (el.isContentEditable) {
+    if (el.querySelector("[data-slate-string], [data-slate-placeholder]")) {
+      return [...el.querySelectorAll("[data-slate-string]")].map((s) => s.textContent).join("");
+    }
+    return el.innerText || el.textContent || "";
+  }
+  return el.value || "";
 }
 
-// Chọn một prompt cụ thể trên list
-async function selectPrompt(idx) {
-    currentPromptIndex = idx;
-    
-    // Cập nhật class active trên UI list
-    document.querySelectorAll('.automator-prompt-item').forEach(el => el.classList.remove('active'));
-    const activeItem = document.getElementById(`prompt-item-${idx}`);
-    if (activeItem) activeItem.classList.add('active');
-
-    // Điền prompt vào ô input của ImageFX bằng debugger
-    log(`Đang chuẩn bị điền prompt #${idx} vào ImageFX bằng debugger...`);
-    const success = await fillPromptToImageFX(activeProject.prompts[idx].prompt);
-    if (success) {
-        log(`Đã chọn prompt #${idx}. Điền và gửi thành công.`);
-        return true;
-    } else {
-        log(`Điền prompt #${idx} thất bại! Hãy kiểm tra console hoặc DevTools.`, 'error');
-        return false;
-    }
+function clickFully(el) {
+  const r = el.getBoundingClientRect();
+  const base = {
+    bubbles: true,
+    cancelable: true,
+    composed: true,
+    view: window,
+    clientX: r.left + r.width / 2,
+    clientY: r.top + r.height / 2,
+  };
+  try {
+    el.dispatchEvent(new PointerEvent("pointerdown", base));
+    el.dispatchEvent(new MouseEvent("mousedown", base));
+    el.dispatchEvent(new PointerEvent("pointerup", base));
+    el.dispatchEvent(new MouseEvent("mouseup", base));
+    el.dispatchEvent(new MouseEvent("click", base));
+  } catch (_) {}
+  el.click?.();
 }
 
-// Điền prompt vào Textarea hoặc ô Chat của ImageFX / Google Flow bằng chrome.debugger
-async function fillPromptToImageFX(text) {
-    // 1. Thử tìm ô Slate.js Editor trước (của Google Flow / Google Labs mới)
-    const slateEditor = document.querySelector('[data-slate-editor="true"]') || 
-                        document.querySelector('div[role="textbox"][contenteditable="true"]');
-                        
-    let inputEl = null;
-    if (slateEditor && !slateEditor.closest('.automator-panel')) {
-        inputEl = slateEditor;
-    }
-    
-    // 2. Fallback: Quét các ô nhập liệu thông thường (loại trừ ô tìm kiếm và panel của ta)
-    if (!inputEl) {
-        const textareas = Array.from(document.querySelectorAll('textarea'));
-        const editables = Array.from(document.querySelectorAll('[contenteditable="true"]'));
-        const inputs = Array.from(document.querySelectorAll('input[type="text"]')).filter(el => 
-            el.getAttribute('data-testid') !== 'search-input' && !el.className.includes('search')
-        );
-        const textboxes = Array.from(document.querySelectorAll('[role="textbox"]'));
-        
-        const candidates = [...textareas, ...editables, ...inputs, ...textboxes].filter(el => {
-            // Loại trừ các ô nhập liệu thuộc chính bảng điều khiển của Automator
-            if (el.closest('.automator-panel') || el.closest('#imagefx-automator-panel') || el.closest('#aistudio-automator-panel')) {
-                return false;
-            }
-            const rect = el.getBoundingClientRect();
-            return rect.width > 150 && rect.height > 20;
-        });
-        
-        if (candidates.length > 0) {
-            inputEl = candidates[0];
-        }
-    }
-
-    if (inputEl) {
-        // Tự động đóng hộp thoại/modal tìm kiếm nếu đang bị mở (tránh cản trở click)
-        const closeBtn = document.querySelector('button[aria-label*="Đóng"], button[title*="Đóng"], button[class*="close"]');
-        if (closeBtn && document.querySelector('[role="dialog"]')) {
-            log("Đang đóng hộp thoại phụ để tránh lỗi click nhầm...");
-            closeBtn.click();
-            await new Promise(r => setTimeout(r, 400));
-        }
-
-        // Cuộn ô nhập liệu vào tầm nhìn
-        inputEl.scrollIntoView({ block: 'center' });
-        await new Promise(r => setTimeout(r, 200));
-
-        const rect = inputEl.getBoundingClientRect();
-        // Lấy tọa độ tương đối với viewport của trình duyệt
-        const x = Math.round(rect.left + rect.width / 2);
-        const y = Math.round(rect.top + rect.height / 2);
-        
-        log(`Phát hiện ô nhập liệu tại tọa độ: X = ${x}, Y = ${y}. Đang gửi qua debugger...`);
-        
-        return new Promise((resolve) => {
-            chrome.runtime.sendMessage({
-                type: "DEBUG_SUBMIT",
-                x: x,
-                y: y,
-                prompt: text
-            }, (response) => {
-                if (chrome.runtime.lastError) {
-                    log(`Lỗi giao tiếp Background: ${chrome.runtime.lastError.message}`, 'error');
-                    resolve(false);
-                } else if (response && response.ok) {
-                    log("Đã giả lập gõ chữ bằng Debugger thành công. Đang kích hoạt nút Tạo/Generate...");
-                    setTimeout(() => {
-                        const clicked = clickGenerateButton();
-                        resolve(clicked);
-                    }, 500);
-                } else {
-                    log(`Lỗi gỡ lỗi: ${response ? response.error : 'Không phản hồi'} (Nhớ ĐÓNG DevTools F12 trên tab Google Flow khi chạy)`, 'error');
-                    resolve(false);
-                }
-            });
-        });
-    } else {
-        log("Không tìm thấy ô nhập prompt nào trên màn hình!", "error");
-        return false;
-    }
-}
-
-// Bấm nút "Generate" hoặc nút gửi (mũi tên) trên ImageFX / Google Flow
 function clickGenerateButton() {
-    const buttons = Array.from(document.querySelectorAll('button'));
-    
-    // 1. Tìm nút có chứa icon arrow_forward (nút gửi chính thức của Google Flow)
-    let generateBtn = buttons.find(b => b.innerHTML.includes('arrow_forward') || b.querySelector('svg[data-icon="arrow-forward"]'));
+  const buttons = Array.from(document.querySelectorAll('button'));
+  
+  let generateBtn = buttons.find(b => b.innerHTML.includes('arrow_forward') || b.querySelector('svg[data-icon="arrow-forward"]'));
 
-    // 2. Tìm nút theo nhãn chữ Generate (tiếng Anh) hoặc Tạo (tiếng Việt)
-    if (!generateBtn) {
-        generateBtn = buttons.find(b => {
-            const txt = (b.textContent || b.innerText || "").trim().toLowerCase();
-            return txt === 'generate' || txt === 'tạo';
-        });
-    }
-
-    // 3. Fallback: Tìm nút có chứa icon send/submit hoặc chứa class/nhãn liên quan
-    if (!generateBtn) {
-        generateBtn = buttons.find(b => 
-            b.innerHTML.includes('send') || 
-            b.className.includes('send') || 
-            b.className.includes('submit') || 
-            b.getAttribute('aria-label') === 'Generate' ||
-            b.getAttribute('aria-label') === 'Tạo'
-        );
-    }
-
-    if (generateBtn) {
-        generateBtn.click();
-        log("Đã click nút Generate/Tạo!");
-        return true;
-    }
-    
-    log("Cảnh báo: Không tìm thấy nút Generate/Tạo trên giao diện. Trình duyệt thử tự gửi bằng phím Enter.", "warning");
-    return true; // Vẫn trả về true để tiếp tục chờ xem phím Enter có hoạt động không
-}
-
-
-
-// Lọc và chỉ giữ lại cụm ảnh mới nằm ở dưới cùng màn hình (thuộc lượt sinh mới nhất)
-function getLatestImageGroup(newImgs) {
-    if (newImgs.length === 0) return [];
-    
-    // Tìm vị trí top lớn nhất trong số các ảnh mới
-    let maxTop = -1;
-    newImgs.forEach(img => {
-        const rect = img.getBoundingClientRect();
-        if (rect.top > maxTop) {
-            maxTop = rect.top;
-        }
+  if (!generateBtn) {
+    generateBtn = buttons.find(b => {
+      const txt = (b.textContent || b.innerText || "").trim().toLowerCase();
+      return txt === 'generate' || txt === 'tạo';
     });
-    
-    // Giữ lại các ảnh có vị trí rect.top nằm sát với ảnh dưới cùng nhất (khoảng cách tối đa 250px)
-    // Thiết kế này gom được toàn bộ ảnh của lưới sinh hiện tại (nằm thẳng hàng hoặc chia thành 2 hàng)
-    const threshold = 250;
-    const latestGroup = newImgs.filter(img => {
-        const rect = img.getBoundingClientRect();
-        return (maxTop - rect.top) <= threshold;
-    });
-    
-    return latestGroup;
+  }
+
+  if (!generateBtn) {
+    generateBtn = buttons.find(b => 
+      b.innerHTML.includes('send') || 
+      b.className.includes('send') || 
+      b.className.includes('submit') || 
+      b.getAttribute('aria-label') === 'Generate' ||
+      b.getAttribute('aria-label') === 'Tạo'
+    );
+  }
+
+  if (generateBtn) {
+    generateBtn.click();
+    console.log("Đã click nút Generate/Tạo!");
+    return true;
+  }
+  
+  return false;
 }
 
-// So khớp xem ảnh có thuộc về prompt hiện tại không dựa trên alt text
-function isImageMatchingPrompt(img, promptText) {
-    if (!img.alt) return true; // Nếu không có alt, mặc định khớp (để tương thích)
-    if (!promptText) return true;
-    
-    const altClean = img.alt.toLowerCase().trim();
-    const promptClean = promptText.toLowerCase().trim();
-    
-    // Nếu trùng khớp trực tiếp hoặc chứa nhau
-    if (altClean.includes(promptClean) || promptClean.includes(altClean)) {
-        return true;
-    }
-    
-    // So khớp từ khóa chính (bỏ các từ nối ngắn)
-    const promptWords = promptClean.split(/[\s,.\-_]+/).filter(w => w.length > 3);
-    const altWords = altClean.split(/[\s,.\-_]+/).filter(w => w.length > 3);
-    
-    if (promptWords.length === 0 || altWords.length === 0) return true;
-    
-    let matchCount = 0;
-    altWords.forEach(word => {
-        if (promptClean.includes(word)) {
-            matchCount++;
-        }
-    });
-    
-    // Khớp từ 35% từ khóa trở lên là đạt (vì alt của ImageFX đôi khi ngắn hơn prompt gốc)
-    const ratio = matchCount / altWords.length;
-    return ratio >= 0.35;
+function getCompletedImages() {
+  return [...document.querySelectorAll("img")].filter((img) => {
+    if (!img.src || !isVisible(img)) return false;
+    const src = srcKey(img);
+    if (!/^https?:|^blob:/.test(src)) return false;
+    const w = img.naturalWidth || img.width;
+    const h = img.naturalHeight || img.height;
+    if (w < 100 && h < 100) return false;
+    // Exclude avatars/logos
+    const srcLower = src.toLowerCase();
+    if (srcLower.includes('avatar') || srcLower.includes('profile') || srcLower.includes('logo') || srcLower.includes('icon') || srcLower.includes('sign-in')) return false;
+    return true;
+  });
 }
 
-// Phát hiện xem các ảnh mới đang được tạo hay đã tạo xong dựa trên ảnh mới xuất hiện
-async function waitForImageGeneration(baseline, promptText) {
-    log(`Đang chờ Google Flow xử lý và tạo ảnh (Chờ tối thiểu: ${expectedImageCount} ảnh)...`);
-    const start = Date.now();
-    const maxWaitMs = 60000; // Tối đa chờ 60 giây
-    let lastLogTime = 0;
-    
-    let lastCount = 0;
-    let lastChangeTime = Date.now();
-    let stableRounds = 0; // Bộ đếm số đợt chờ 10s ổn định
-    
-    while (Date.now() - start < maxWaitMs) {
-        if (!isRunning) return { status: 'error', error: 'user_stopped', message: 'Người dùng dừng' };
-        
-        // Kiểm tra xem có lỗi hiển thị trên giao diện không
-        const error = detectImageFXError();
-        if (error) {
-            return { status: 'error', error: error.type, message: error.message };
-        }
-        
-        const newImgs = getNewImages(baseline, promptText);
-        const activeGroup = getLatestImageGroup(newImgs);
-        const currentCount = activeGroup.length;
-        
-        // 1. Nếu đã đủ số lượng mong đợi (ví dụ 2 hoặc 4 ảnh), hoàn tất ngay lập tức
-        if (currentCount >= expectedImageCount) {
-            log(`Phát hiện đầy đủ ${currentCount}/${expectedImageCount} ảnh kết quả mới!`);
-            await new Promise(r => setTimeout(r, 2000)); // Chờ 2 giây để ảnh hiển thị hoàn toàn
-            const finalImgs = getLatestImageGroup(getNewImages(baseline, promptText));
-            return { status: 'success', images: finalImgs };
-        }
-        
-        // 2. Nếu đã có ít nhất 1 ảnh mới (nhưng chưa đủ số lượng mong đợi), kiểm tra sự thay đổi để ổn định
-        if (currentCount > 0) {
-            if (currentCount !== lastCount) {
-                log(`Phát hiện ${currentCount}/${expectedImageCount} ảnh mới... đang đợi các ảnh còn lại...`);
-                lastCount = currentCount;
-                lastChangeTime = Date.now();
-                stableRounds = 0; // Reset số đợt chờ nếu số lượng ảnh có thay đổi
-            } else {
-                // Tùy biến thời gian chờ ổn định:
-                // Nếu đã đủ số lượng, chỉ cần chờ 3 giây ổn định.
-                if (currentCount >= expectedImageCount) {
-                    if (Date.now() - lastChangeTime >= 3000) {
-                        log(`Số lượng ảnh mới giữ nguyên ở ${currentCount} trong 3 giây. Xem như hoàn tất.`);
-                        await new Promise(r => setTimeout(r, 1000));
-                        const finalImgs = getLatestImageGroup(getNewImages(baseline, promptText));
-                        return { status: 'success', images: finalImgs };
-                    }
-                } else {
-                    // Nếu chưa đủ số lượng expectedImageCount, chờ ổn định chia làm 3 đợt, mỗi đợt 10 giây (tổng cộng tối đa 30s)
-                    if (Date.now() - lastChangeTime >= 10000) {
-                        stableRounds++;
-                        if (stableRounds < 3) {
-                            log(`Số lượng ảnh giữ nguyên ở ${currentCount}/${expectedImageCount} sau 10s. Tiếp tục chờ đợt ${stableRounds + 1}/3...`, 'warning');
-                            lastChangeTime = Date.now(); // Reset bộ đếm thời gian đợt mới
-                        } else {
-                            log(`Đã chờ ổn định đủ 3 đợt (30s) nhưng số lượng ảnh vẫn là ${currentCount}/${expectedImageCount}. Xem như hoàn tất.`);
-                            await new Promise(r => setTimeout(r, 1000));
-                            const finalImgs = getLatestImageGroup(getNewImages(baseline, promptText));
-                            return { status: 'success', images: finalImgs };
-                        }
-                    }
-                }
-            }
-        }
-        
-        const elapsed = Math.round((Date.now() - start) / 1000);
-        if (elapsed - lastLogTime >= 5) {
-            lastLogTime = elapsed;
-            if (currentCount === 0) {
-                log(`...đang tạo ảnh (${elapsed} giây)...`);
-            }
-        }
-        
-        await new Promise(r => setTimeout(r, 500)); // Kiểm tra mỗi 0.5s
-    }
-    
-    log("Quá thời gian chờ (60s). Thử lấy các ảnh mới hiện có...");
-    const finalImgs = getLatestImageGroup(getNewImages(baseline, promptText));
-    if (finalImgs.length > 0) {
-        return { status: 'success', images: finalImgs };
-    }
-    return { status: 'error', error: 'timeout', message: 'Quá thời gian chờ (60s) không thấy ảnh mới' };
-}
-
-// Lấy tất cả ảnh mới phù hợp (không có trong baseline)
-function getNewImages(baseline, promptText) {
-    const allImages = Array.from(document.querySelectorAll('img'));
-    return allImages.filter(img => {
-        if (!img.src || baseline.has(img.src)) return false;
-        
-        const rect = img.getBoundingClientRect();
-        // Lọc kích thước ảnh kết quả (thường lớn hơn 100px)
-        if (rect.width < 100 || rect.height < 100) return false;
-        
-        // Loại bỏ ảnh UI và avatar tài khoản Google
-        const srcLower = img.src.toLowerCase();
-        if (srcLower.includes('avatar') || 
-            srcLower.includes('profile') || 
-            srcLower.includes('logo') || 
-            srcLower.includes('icon') ||
-            srcLower.includes('sign-in')) {
-            return false;
-        }
-
-        return true;
-    });
-}
-
-
-
-// Upload ảnh tự động kèm chỉ mục version
-async function uploadImageToServer(imgElement, index, version = null) {
-    if (!imgElement || !imgElement.src) {
-        log(`Không tìm thấy ảnh kết quả để tải lên cho prompt #${index}!`, 'error');
-        return false;
-    }
-
-    const verText = version !== null ? ` v${version}` : '';
-    log(`Đang tải ảnh #${index}${verText} từ ImageFX và đẩy về Dashboard...`);
-    
-    try {
-        const response = await fetch(imgElement.src);
-        const blob = await response.blob();
-        
-        const formData = new FormData();
-        const filename = version !== null ? `${index}_v${version}.png` : `${index}.png`;
-        formData.append('file', blob, filename);
-        
-        let url = `${dashboardUrl}/api/projects/${activeProject.info.project_name}/upload-image?index=${index}`;
-        if (version !== null) {
-            url += `&version=${version}`;
-        }
-        
-        const res = await fetch(url, {
-            method: 'POST',
-            body: formData
-        });
-        
-        const data = await res.json();
-        if (data.status === 'success') {
-            log(`Upload thành công ảnh #${index}${verText}!`, 'success');
-            // Cập nhật trạng thái trên UI
-            updatePromptStatusUI(index, true);
-            return true;
-        } else {
-            log(`Upload thất bại: ${data.message || 'Lỗi không xác định'}`, 'error');
-            return false;
-        }
-    } catch (e) {
-        log(`Lỗi kết nối upload: ${e.message}`, 'error');
-        return false;
-    }
-}
-
-// Cập nhật trạng thái prompt trên UI Extension
-function updatePromptStatusUI(index, isSuccess) {
-    const item = document.getElementById(`prompt-item-${index}`);
-    if (item) {
-        item.className = `automator-prompt-item ${isSuccess ? 'status-ready' : 'status-missing'}`;
-        item.querySelector('.prompt-status').textContent = isSuccess ? 'Đã có' : 'Chưa có';
-    }
-}
-
-// Phát hiện lỗi từ giao diện ImageFX (Safety block, Rate limit)
 function detectImageFXError() {
-    const textElements = Array.from(document.querySelectorAll('div, span, p, h1, h2, h3, li'));
-    
-    for (const el of textElements) {
-        if (!el.textContent) continue;
-        const text = el.textContent.trim().toLowerCase();
-        
-        // 1. Kiểm duyệt an toàn (Safety Block)
-        if (text.includes("can't generate") || 
-            text.includes("say something else") || 
-            text.includes("try a different prompt") || 
-            text.includes("violate our safety") || 
-            text.includes("content warning") ||
-            text.includes("không thể tạo ảnh này") || 
-            text.includes("vi phạm chính sách")) {
-            return { type: 'safety', message: el.textContent.trim() };
-        }
-        
-        // 2. Hạn mức hạn chế (Daily limit/Rate limit)
-        if (text.includes("reached your limit") || 
-            text.includes("quota exceeded") || 
-            text.includes("try again tomorrow") || 
-            text.includes("too many requests") ||
-            text.includes("đạt giới hạn") || 
-            text.includes("vượt quá hạn mức")) {
-            return { type: 'limit', message: el.textContent.trim() };
-        }
+  const textElements = Array.from(document.querySelectorAll('div, span, p, h1, h2, h3, li'));
+  for (const el of textElements) {
+    if (!el.textContent) continue;
+    const text = el.textContent.trim().toLowerCase();
+    if (text.includes("can't generate") || text.includes("say something else") || text.includes("try a different prompt") || text.includes("violate our safety") || text.includes("content warning") || text.includes("không thể tạo ảnh này") || text.includes("vi phạm chính sách")) {
+      return { type: 'safety', message: el.textContent.trim() };
     }
-    return null;
+    if (text.includes("reached your limit") || text.includes("quota exceeded") || text.includes("try again tomorrow") || text.includes("too many requests") || text.includes("đạt giới hạn") || text.includes("vượt quá hạn mức")) {
+      return { type: 'limit', message: el.textContent.trim() };
+    }
+  }
+  return null;
 }
 
-// Phát âm thanh bip báo hiệu qua Web Audio API khi có lỗi giới hạn
-function playAlertSound() {
-    try {
-        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        let time = audioContext.currentTime;
-        
-        const playBeep = (freq, duration, delay) => {
-            const osc = audioContext.createOscillator();
-            const gainNode = audioContext.createGain();
-            
-            osc.type = 'sine';
-            osc.frequency.value = freq;
-            
-            gainNode.gain.setValueAtTime(0.1, time + delay);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, time + delay + duration);
-            
-            osc.connect(gainNode);
-            gainNode.connect(audioContext.destination);
-            
-            osc.start(time + delay);
-            osc.stop(time + delay + duration);
-        };
-        
-        // Bíp bíp bíp
-        playBeep(880, 0.2, 0);
-        playBeep(880, 0.2, 0.3);
-        playBeep(880, 0.4, 0.6);
-    } catch (e) {
-        console.error("Không thể phát âm thanh cảnh báo:", e);
-    }
+async function toDataUrl(url) {
+  const res = await fetch(url);
+  const blob = await res.blob();
+  return await new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(fr.result);
+    fr.onerror = reject;
+    fr.readAsDataURL(blob);
+  });
 }
 
-// Bắt đầu quy trình tự động hóa
-async function startAutomation() {
-    if (!activeProject) {
-        alert("Vui lòng kết nối với Dashboard trước!");
-        return;
-    }
-
-    isRunning = true;
-    localStorage.setItem('imagefx_automator_running', 'true');
-    document.getElementById('automator-start-btn').classList.add('hidden');
-    document.getElementById('automator-stop-btn').classList.remove('hidden');
+// ---------- B. Messaging Event Listener (Connects with Side Panel) ----------
+if (!window.__DVA_LISTENER_REGISTERED__) {
+  window.__DVA_LISTENER_REGISTERED__ = true;
+  
+  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    if (!msg || !msg.type) return;
     
-    const mode = 'auto';
-    log(`Khởi động tự động hóa. Chế độ: Tự động 100%`, 'warning');
-
-    // Quét sạch các ảnh trên màn hình trước khi bắt đầu tự động hóa để tránh nhận nhầm ảnh cũ
-    Array.from(document.querySelectorAll('img')).forEach(img => {
-        if (img.src) seenImageUrls.add(img.src);
-    });
-
-    let retryCount = 0;
-
-    // Chạy vòng lặp dynamic pull để lấy task từ server
-    while (isRunning) {
-        let task = null;
+    if (msg.type === "PING") {
+      let hasInput = false;
+      try {
+        hasInput = !!findPromptInput();
+      } catch (_) {}
+      sendResponse({ ok: true, hasInput });
+      return;
+    }
+    
+    if (msg.type === "SUBMIT_PROMPT") {
+      (async () => {
         try {
-            const res = await fetch(`${dashboardUrl}/api/projects/${activeProject.info.project_name}/next-pending-prompt`);
-            if (res.ok) {
-                const data = await res.json();
-                if (data.status === 'success') {
-                    task = data;
-                } else {
-                    log("Không còn prompt nào cần sinh ảnh hoặc đang bị khóa bởi tab khác.", "info");
-                    // Chờ 5 giây rồi thử lại hoặc dừng nếu đã hoàn tất hoàn toàn
-                    await new Promise(r => setTimeout(r, 5000));
-                    
-                    // Reload trạng thái dự án để xem thực tế có còn thiếu ảnh không
-                    const refreshRes = await fetch(`${dashboardUrl}/api/active-project`);
-                    const refreshData = await refreshRes.json();
-                    activeProject = refreshData;
-                    
-                    const firstMissing = getFirstMissingPromptIndex();
-                    if (firstMissing === -1) {
-                        log("Chúc mừng! Đã sinh và tải lên thành công toàn bộ ảnh cho dự án!", "success");
-                        stopAutomation();
-                        break;
-                    }
-                    continue;
-                }
-            } else {
-                log("Không kết nối được Dashboard để lấy task. Đang thử lại...", "error");
-                await new Promise(r => setTimeout(r, 5000));
-                continue;
-            }
+          // 1. Chụp baseline ảnh cũ trước khi gửi prompt mới
+          window.__imagefx_baseline = new Set(getCompletedImages().map(srcKey));
+          console.log(`[Task #${msg.index}] Chụp baseline cũ. Số lượng: ${window.__imagefx_baseline.size} ảnh.`);
+          
+          // 2. Tìm và đánh thức ô nhập liệu
+          let input = await wakePromptBox();
+          if (!input) {
+            sendResponse({ ok: false, error: "Không tìm thấy ô prompt." });
+            return;
+          }
+          
+          // 3. Focus và điền prompt bằng kỹ thuật execCommand
+          clickFully(input);
+          input.focus();
+          await sleep(150);
+          
+          setPromptText(input, msg.prompt);
+          // Đợi 1.5 giây để React đồng bộ
+          await sleep(1500);
+          
+          // 4. Bấm nút Tạo / Gửi
+          const clicked = clickGenerateButton();
+          if (clicked) {
+            sendResponse({ ok: true });
+          } else {
+            // Thử Enter dự phòng
+            const ev = new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true, cancelable: true });
+            Object.defineProperty(ev, "keyCode", { get: () => 13 });
+            Object.defineProperty(ev, "which", { get: () => 13 });
+            input.dispatchEvent(ev);
+            sendResponse({ ok: true, note: "Submit bằng phím Enter dự phòng" });
+          }
         } catch (e) {
-            log(`Lỗi kết nối Dashboard: ${e.message}`, "error");
-            await new Promise(r => setTimeout(r, 5000));
-            continue;
+          sendResponse({ ok: false, error: String(e) });
         }
-
-        if (!isRunning) break;
-
-        const i = task.index;
-        currentPromptIndex = i;
-        
-        // Thêm các ảnh đang hiển thị vào seenImageUrls trước lượt sinh mới để bảo vệ baseline
-        Array.from(document.querySelectorAll('img')).forEach(img => {
-            if (img.src) seenImageUrls.add(img.src);
-        });
-        
-        const baseline = new Set(seenImageUrls);
-        log(`[Task] Bắt đầu sinh ảnh #${i}: "${task.prompt}"`);
-
-        // 2. Điền và gửi prompt
-        const filled = await fillPromptToImageFX(task.prompt);
-        if (!filled) {
-            log(`Lỗi điền prompt #${i}. Đang thử lại...`, "warning");
-            await new Promise(r => setTimeout(r, 3000));
-            continue;
-        }
-        
-        if (!isRunning) break;
-
-        // 3. Chờ tạo ảnh xong
-        const genResult = await waitForImageGeneration(baseline, task.prompt);
-        
-        if (genResult.status === 'error') {
-            if (genResult.error === 'safety') {
-                log(`[Kiểm duyệt] Prompt #${i} bị chặn kiểm duyệt!`, 'error');
-                if (retryCount < 1) {
-                    retryCount++;
-                    log(`[Kiểm duyệt] Đang gọi Gemini để tự động viết lại prompt #${i}...`);
-                    try {
-                        const rwRes = await fetch(`${dashboardUrl}/api/projects/${activeProject.info.project_name}/rewrite-prompt`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ index: i, prompt: task.prompt })
-                        });
-                        if (rwRes.ok) {
-                            const rwData = await rwRes.json();
-                            if (rwData.status === 'success') {
-                                log(`[Kiểm duyệt] Đã viết lại thành công! Thử sinh lại...`, 'success');
-                                await new Promise(r => setTimeout(r, 2000));
-                                continue; // Lặp lại vòng lặp để lấy lại prompt này (đã được viết lại sạch hơn)
-                            }
-                        }
-                    } catch (rwErr) {
-                        log(`Lỗi gọi API viết lại: ${rwErr.message}`, 'error');
-                    }
-                }
-                
-                log(`[Kiểm duyệt] Bỏ qua prompt #${i} để bạn xử lý thủ công sau.`, 'warning');
-                retryCount = 0; // Reset
-                await new Promise(r => setTimeout(r, 2000));
-            } else if (genResult.error === 'limit') {
-                log(`[Hạn mức] Đã hết hạn mức sinh ảnh của ngày hôm nay!`, 'error');
-                playAlertSound();
-                stopAutomation();
-                break;
-            } else {
-                log(`[Timeout/Hủy] ${genResult.message}. Dừng tiến trình để an toàn.`, 'warning');
-                stopAutomation();
-                break;
-            }
-        } else {
-            // Sinh ảnh thành công
-            retryCount = 0; // Reset
-            const newImgs = genResult.images;
+      })();
+      return true; // asynchronous response
+    }
+    
+    if (msg.type === "WAIT_IMAGE") {
+      const baseline = window.__imagefx_baseline || new Set();
+      const expectedCount = msg.expectedCount || 2;
+      const start = Date.now();
+      const maxWaitMs = 60000; // 60s timeout
+      
+      (async () => {
+        while (Date.now() - start < maxWaitMs) {
+          // Check safety or quota errors first
+          const err = detectImageFXError();
+          if (err) {
+            sendResponse({ ok: false, error: err.type, message: err.message });
+            return;
+          }
+          
+          // Scan for new images
+          const all = getCompletedImages();
+          const fresh = all.filter(i => !baseline.has(srcKey(i)));
+          
+          if (fresh.length >= expectedCount) {
+            await sleep(1500); // Wait to stabilize
+            // Recalculate
+            const finalAll = getCompletedImages();
+            const finalFresh = finalAll.filter(i => !baseline.has(srcKey(i)));
             
-            // Đánh dấu các ảnh mới vừa sinh này là đã xem ngay lập tức để bảo vệ các prompt sau
-            newImgs.forEach(img => {
-                if (img.src) seenImageUrls.add(img.src);
-            });
-
-            log(`Đang tự động tải lên tất cả ${newImgs.length} ảnh vừa sinh cho prompt #${i}...`);
-            let allSuccess = true;
-            for (let v_idx = 0; v_idx < newImgs.length; v_idx++) {
-                const img = newImgs[v_idx];
-                const uploaded = await uploadImageToServer(img, i, v_idx);
-                if (!uploaded) {
-                    allSuccess = false;
-                }
-            }
-            if (!allSuccess) {
-                log("Tải ảnh thất bại. Tạm dừng để kiểm tra.", "error");
-                stopAutomation();
-                break;
-            }
+            // Return new image srcs
+            sendResponse({ ok: true, images: finalFresh.map(srcKey) });
+            return;
+          }
+          
+          await sleep(1000);
         }
         
-        // Nghỉ 1.5 giây trước khi chạy prompt tiếp theo
-        await new Promise(r => setTimeout(r, 1500));
+        // Timeout: Return any available new images
+        const finalAll = getCompletedImages();
+        const finalFresh = finalAll.filter(i => !baseline.has(srcKey(i)));
+        if (finalFresh.length > 0) {
+          sendResponse({ ok: true, images: finalFresh.map(srcKey) });
+        } else {
+          sendResponse({ ok: false, error: 'timeout', message: 'Quá thời gian chờ (60s) không thấy ảnh mới' });
+        }
+      })();
+      return true;
     }
+    
+    if (msg.type === "TODATAURL") {
+      toDataUrl(msg.src)
+        .then((d) => sendResponse({ dataUrl: d }))
+        .catch((e) => sendResponse({ error: String(e) }));
+      return true;
+    }
+  });
 }
 
-// Dừng tự động hóa
-function stopAutomation() {
-    isRunning = false;
-    localStorage.setItem('imagefx_automator_running', 'false');
-    document.getElementById('automator-start-btn').classList.remove('hidden');
-    document.getElementById('automator-stop-btn').classList.add('hidden');
-    log("Đã dừng tiến trình tự động hóa.", "warning");
-    
-    // Đóng debugger khi dừng chạy để ẩn thanh thông báo màu vàng
-    chrome.runtime.sendMessage({ type: "DEBUG_DETACH" });
-}
-
-// Thử lại sinh ảnh cho prompt hiện tại
-async function handleRetryCurrentPrompt() {
-    if (!activeProject) {
-        alert("Vui lòng kết nối với Dashboard trước!");
-        return;
+function getValidatedHost() {
+    let host = localStorage.getItem('imagefx_automator_host');
+    if (!host || (!host.startsWith('http://') && !host.startsWith('https://'))) {
+        host = "http://127.0.0.1:8085";
     }
-    
-    const idx = currentPromptIndex;
-    log(`[Thử lại] Bắt đầu thử lại cho prompt #${idx}...`, 'warning');
-    
-    // 1. Dừng tự động hóa hiện tại nếu đang chạy
-    stopAutomation();
-    await new Promise(r => setTimeout(r, 1000)); // Chờ 1 giây để tiến trình cũ dừng hẳn
-    
-    // 2. Gọi API server để xóa ảnh cũ của prompt này
-    try {
-        const res = await fetch(`${dashboardUrl}/api/projects/${activeProject.info.project_name}/delete-image/${idx}`, {
-            method: 'POST'
-        });
-        if (!res.ok) throw new Error("Không thể xóa ảnh cũ trên server");
-        log(`[Thử lại] Đã xóa ảnh cũ của prompt #${idx} trên server.`, 'success');
-    } catch (e) {
-        log(`[Thử lại] Cảnh báo khi xóa ảnh: ${e.message}`, 'warning');
-    }
-    
-    // 3. Quét sạch các ảnh đang hiển thị vào seenImageUrls trước lượt sinh mới để bảo vệ baseline
-    Array.from(document.querySelectorAll('img')).forEach(img => {
-        if (img.src) seenImageUrls.add(img.src);
-    });
-    
-    // 4. Điền prompt và click Generate
-    const promptText = activeProject.prompts[idx].prompt;
-    log(`[Thử lại] Đang điền prompt và kích hoạt sinh lại...`);
-    const filled = await fillPromptToImageFX(promptText);
-    if (!filled) {
-        log(`Lỗi điền prompt #${idx} khi thử lại.`, 'error');
-        return;
-    }
-    
-    // 5. Khởi động lại tự động hóa từ prompt này
-    startAutomation();
+    return host;
 }
 
 // =============================================================
-//  GOOGLE AI STUDIO AUTOMATION LOGIC
+//  GOOGLE AI STUDIO AUTOMATION LOGIC (For Web Gemini)
 // =============================================================
 
 let isAIStudioRunning = false;
@@ -944,7 +441,6 @@ async function connectAIStudioDashboard() {
     const hostInput = document.getElementById('aistudio-host-input').value.trim();
     if (!hostInput) return;
     
-    // Kiểm tra URL hợp lệ để tránh lưu nhầm prompt text vào localStorage
     if (!hostInput.startsWith('http://') && !hostInput.startsWith('https://')) {
         logAIStudio(`URL không hợp lệ: "${hostInput.substring(0, 50)}...". Phải bắt đầu bằng http:// hoặc https://`, 'error');
         document.getElementById('aistudio-host-input').value = dashboardUrl;
@@ -1050,16 +546,13 @@ function findAIStudioInput() {
 }
 
 function findAIStudioRunButton() {
-    // 1. Tìm bằng text content trước (rất chính xác cho AI Studio mới)
     const buttons = Array.from(document.querySelectorAll('button'));
     const runBtn = buttons.find(b => {
         const txt = b.textContent.trim().toLowerCase().replace(/\s+/g, '');
-        // Hỗ trợ: "run", "runctrl+enter", "runctrl", "runprompt"
         return (txt === 'run' || txt === 'runctrl+enter' || txt === 'runctrl' || txt === 'runprompt');
     });
     if (runBtn) return runBtn;
 
-    // 2. Fallback bằng các selector khác (AI Studio & Gemini)
     const selectors = [
         'button.run-button',
         'button[aria-label="Run"]',
@@ -1130,25 +623,22 @@ function getAIStudioResponseText() {
 
 async function waitForAIStudioGeneration() {
     logAIStudio("Đang chờ sinh kết quả...");
-    const maxWaitMs = 10 * 60 * 1000; // 10 phút
+    const maxWaitMs = 10 * 60 * 1000;
     const startWait = Date.now();
     
     let lastTextLength = -1;
     let stableCount = 0;
     
-    // Chờ 2 giây đầu tiên để quá trình sinh bắt đầu
     await new Promise(r => setTimeout(r, 2000));
     
     while (Date.now() - startWait < maxWaitMs) {
         const stopBtn = findAIStudioStopButton();
         const text = getAIStudioResponseText();
         
-        // Nếu đã đợi hơn 15 giây mà không có phản hồi (text rỗng) và không thấy nút Stop
         if (Date.now() - startWait > 15000 && !stopBtn && text.length === 0) {
             throw new Error("Không khởi động được tiến trình sinh (nút Run hoặc phím tắt Ctrl+Enter không phản hồi).");
         }
         
-        // Nếu nút Stop không còn hiển thị nữa
         if (!stopBtn) {
             if (text.length > 0) {
                 logAIStudio("Sinh hoàn tất (không thấy nút Stop và đã có text).");
@@ -1156,7 +646,6 @@ async function waitForAIStudioGeneration() {
             }
         }
         
-        // Kiểm tra sự ổn định của text
         if (text.length > 0 && text.length === lastTextLength) {
             stableCount++;
             if (stableCount >= 4) {
@@ -1204,7 +693,6 @@ async function executeAIStudioTask(prompt) {
         logAIStudio("Tìm thấy nút Run, tiến hành Click...");
         runBtn.click();
         
-        // Gửi thêm Ctrl+Enter dự phòng sau 150ms
         setTimeout(() => {
             textarea.dispatchEvent(new KeyboardEvent('keydown', {
                 key: 'Enter',
@@ -1258,30 +746,15 @@ async function sendTaskResult(taskId, result, error) {
     }
 }
 
-// Khởi chạy
+// Khởi chạy tự động
 setTimeout(async () => {
     const isAIStudio = window.location.hostname.includes('aistudio.google.com') || window.location.hostname.includes('gemini.google.com');
     if (isAIStudio) {
         createAIStudioUI();
     } else {
-        createUI();
-        // Quét sạch các ảnh trên màn hình khi tải trang lần đầu
+        // Quét sạch các ảnh trên màn hình khi tải trang lần đầu để làm sạch baseline
         Array.from(document.querySelectorAll('img')).forEach(img => {
             if (img.src) seenImageUrls.add(img.src);
         });
-
-        // Tự động khôi phục tiến trình nếu trang bị F5/Reload trong lúc đang chạy
-        const savedRunning = localStorage.getItem('imagefx_automator_running') === 'true';
-        dashboardUrl = getValidatedHost();
-        // Cập nhật lại ô nhập liệu với URL đã xác thực
-        const hostInputEl = document.getElementById('automator-host-input');
-        if (hostInputEl) hostInputEl.value = dashboardUrl;
-
-        if (savedRunning) {
-            log("Phát hiện kết nối cũ trước khi reload. Đang khôi phục...", "warning");
-            await connectDashboard();
-            // Đặt trạng thái chạy về false để người dùng tự click "Bắt đầu chạy" khi sẵn sàng
-            localStorage.setItem('imagefx_automator_running', 'false');
-        }
     }
 }, 2000);

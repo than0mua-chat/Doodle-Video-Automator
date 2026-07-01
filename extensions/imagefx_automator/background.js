@@ -1,8 +1,12 @@
 // ============================================================
 //  Doodle Video Automator — background.js
-//  Sử dụng chrome.debugger (CDP) để gõ chữ và bấm Enter thật
-//  để vượt qua các lớp bảo mật, bộ lọc sự kiện của React/Slate.js
 // ============================================================
+
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.sidePanel
+    .setPanelBehavior({ openPanelOnActionClick: true })
+    .catch((e) => console.warn("[Automator] setPanelBehavior:", e));
+});
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
