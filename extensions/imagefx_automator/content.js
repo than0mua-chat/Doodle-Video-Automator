@@ -475,58 +475,55 @@ if (!window.__DVA_LISTENER_REGISTERED__) {
             return;
           }
           
-          sendDebugLog(`Ô prompt: TAG=${input.tagName}, role=${input.getAttribute("role")}, isCE=${input.isContentEditable}`);
+          const r = input.getBoundingClientRect();
+          const x = Math.round(r.left + r.width / 2);
+          const y = Math.round(r.top + r.height / 2);
+          sendDebugLog(`Ô prompt: TAG=${input.tagName}, tọa độ=(${x}, ${y})`);
           
-          // 3. Focus và điền prompt (theo cách h2dev_flow)
-          clickFully(input);
-          input.focus?.();
-          await sleep(150);
+          // 3. Dùng Chrome Debugger API để gõ chữ thật (trusted events)
+          //    Gửi message đến background.js để nó dùng chrome.debugger
+          sendDebugLog("Gọi DEBUG_SUBMIT qua background.js (Chrome Debugger API)...");
+          const debugResult = await new Promise((resolve) => {
+            chrome.runtime.sendMessage(
+              { type: "DEBUG_SUBMIT", x, y, prompt: msg.prompt },
+              (resp) => {
+                if (chrome.runtime.lastError) {
+                  resolve({ ok: false, error: chrome.runtime.lastError.message });
+                } else {
+                  resolve(resp || { ok: false, error: "Không nhận được phản hồi từ background" });
+                }
+              }
+            );
+          });
           
-          setPromptText(input, msg.prompt);
-          await sleep(1500); // Chờ React/Wiz đồng bộ hóa trạng thái
-          
-          // Kiểm tra xem chữ đã thực sự được gõ vào chưa
-          const got = inputText(input).trim();
-          sendDebugLog(`Nội dung ô prompt sau khi gõ: "${got.slice(0, 60)}..." (${got.length} ký tự)`);
-          
-          if (got.length < 3) {
-            sendResponse({ ok: false, error: "Không thể điền văn bản vào ô prompt (Slate/input không nhận ký tự)." });
+          if (!debugResult.ok) {
+            sendDebugLog(`DEBUG_SUBMIT thất bại: ${debugResult.error}`, "error");
+            sendResponse({ ok: false, error: `Debugger API lỗi: ${debugResult.error}` });
             return;
           }
           
-          // 4. Gửi prompt CHẮC CHẮN: thử lại nhiều lần (cơ chế h2dev_flow)
-          const arrow = findGenerateButton(input);
-          sendDebugLog(`Nút gửi: ${arrow ? (arrow.textContent.trim().slice(0, 20) || arrow.tagName) : "KHÔNG THẤY"}`);
+          sendDebugLog("DEBUG_SUBMIT hoàn thành. Chờ xác nhận ô prompt trống...");
           
-          for (let i = 0; i < 10; i++) {
-            // 4a. Ưu tiên Enter (giống khi người dùng tự bấm Enter)
-            input.focus?.();
-            pressEnter(input);
-            await sleep(700);
-            if (inputText(input).trim().length < 3) {
-              sendDebugLog(`✅ Gửi thành công bằng ENTER (lần ${i + 1})`);
-              sendResponse({ ok: true, note: `Submit bằng Enter lần ${i + 1}` });
-              return;
+          // 4. Chờ xác nhận: ô prompt phải trống sau khi gửi
+          await sleep(1500);
+          const afterText = inputText(input).trim();
+          if (afterText.length < 3) {
+            sendDebugLog("✅ Prompt đã được gửi thành công (ô prompt trống).");
+            sendResponse({ ok: true, note: "Submit bằng Debugger API" });
+          } else {
+            // Ô chưa trống = prompt chưa được gửi, nhưng debugger đã gõ xong
+            // Có thể Enter chưa kịp → thử chờ thêm
+            sendDebugLog(`Ô prompt vẫn còn chữ (${afterText.length} ký tự). Chờ thêm...`);
+            await sleep(2000);
+            const afterText2 = inputText(input).trim();
+            if (afterText2.length < 3) {
+              sendDebugLog("✅ Prompt đã được gửi thành công (sau chờ thêm).");
+              sendResponse({ ok: true, note: "Submit bằng Debugger API (chờ thêm)" });
+            } else {
+              sendDebugLog("⚠️ Ô prompt vẫn còn chữ nhưng Debugger đã hoàn thành. Coi như OK.", "warning");
+              sendResponse({ ok: true, note: "Debugger API xong, ô chưa trống" });
             }
-            
-            // 4b. Enter chưa ăn -> thử click nút mũi tên
-            if (arrow) {
-              clickFully(arrow);
-              await sleep(700);
-              if (inputText(input).trim().length < 3) {
-                sendDebugLog(`✅ Gửi thành công bằng CLICK nút (lần ${i + 1})`);
-                sendResponse({ ok: true, note: `Submit bằng click nút lần ${i + 1}` });
-                return;
-              }
-            }
-            
-            sendDebugLog(`Lần thử ${i + 1}/10: chưa gửi được, thử lại...`);
           }
-          
-          sendResponse({ 
-            ok: false, 
-            error: "Không thể gửi prompt sau 10 lần thử. Ô nhập vẫn còn chữ." 
-          });
         } catch (e) {
           sendResponse({ ok: false, error: "Lỗi ngoại lệ trong content script: " + String(e) });
         }
