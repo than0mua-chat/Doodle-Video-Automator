@@ -458,11 +458,19 @@ async function startAutomation() {
       expectedCount: expectedImageCount
     });
     
-    if (!isRunning) break;
+    // NẾU người dùng nhấn Dừng, ta ưu tiên:
+    // 1. Nếu ảnh đã tạo xong (waitResp.ok), tiếp tục lưu ảnh thay vì bỏ đi.
+    // 2. Nếu đang chờ ảnh mà bị ngắt (waitResp.error == 'stopped'), thì mới break.
     
     if (!waitResp || !waitResp.ok || !waitResp.images || waitResp.images.length === 0) {
       // Xử lý lỗi
       const errType = waitResp ? waitResp.error : 'timeout';
+      
+      if (errType === 'stopped' || !isRunning) {
+        log("Tiến trình đã bị người dùng dừng lại.", "warning");
+        break;
+      }
+      
       if (errType === 'safety') {
         log(`[Kiểm duyệt] Prompt #${i} bị ImageFX từ chối sinh do vi phạm chính sách!`, "error");
         if (retryCount < 1) {
@@ -562,6 +570,8 @@ async function startAutomation() {
     const refreshRes = await fetch(`${dashboardUrl}/api/active-project`);
     activeProject = await refreshRes.json();
     renderQueue();
+    
+    if (!isRunning) break;
   }
 }
 
@@ -571,13 +581,18 @@ function randDelay() {
   return (min + Math.random() * (max - min)) * 1000;
 }
 
-function stopAutomation() {
+async function stopAutomation() {
   isRunning = false;
   chrome.storage.local.set({ imagefx_automator_running: false });
   els.startBtn.disabled = false;
   els.stopBtn.disabled = true;
   els.retryBtn.style.display = "inline-block";
   log("🛑 Đã dừng tiến trình tự động hóa điều phối.", "warning");
+  
+  const tab = await getFlowTab();
+  if (tab) {
+    sendToTab(tab.id, { type: "STOP" });
+  }
 }
 
 // Play Audio Beep on limit error

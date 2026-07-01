@@ -460,10 +460,16 @@ if (!window.__DVA_LISTENER_REGISTERED__) {
       sendResponse({ ok: true, hasInput });
       return;
     }
+    if (msg.type === "STOP") {
+      window.__imagefx_stop = true;
+      sendResponse({ ok: true });
+      return;
+    }
     
     if (msg.type === "SUBMIT_PROMPT") {
       (async () => {
         try {
+          window.__imagefx_stop = false;
           // 1. Chụp baseline ảnh cũ trước khi gửi prompt mới
           window.__imagefx_baseline = new Set(getCompletedImages().map(srcKey));
           sendDebugLog(`[Task #${msg.index}] Chụp baseline cũ. Số lượng: ${window.__imagefx_baseline.size} ảnh.`);
@@ -539,6 +545,11 @@ if (!window.__DVA_LISTENER_REGISTERED__) {
       
       (async () => {
         while (Date.now() - start < maxWaitMs) {
+          if (window.__imagefx_stop) {
+            sendResponse({ ok: false, error: 'stopped', message: 'Đã dừng theo yêu cầu người dùng' });
+            return;
+          }
+          
           // Check safety or quota errors first
           const err = detectImageFXError();
           if (err) {
