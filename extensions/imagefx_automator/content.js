@@ -173,9 +173,65 @@ function setPromptText(el, text) {
   sendDebugLog(`Bắt đầu điền prompt. Độ dài text: ${text.length}, TAG=${el.tagName}, isCE=${el.isContentEditable}`);
   
   if (el.isContentEditable || el.getAttribute("data-slate-editor") === "true") {
-    // Slate/ContentEditable: dùng execCommand (đúng cách h2dev_flow)
-    el.focus();
+    // === Cách 1: slateInsert — dùng beforeinput event (Slate.js lắng nghe event này) ===
+    // Đây chính là cách h2dev_flow dùng trong hàm slateInsert()
     try {
+      // Focus vào giữa editor (giống focusEditor của h2dev_flow)
+      const r = el.getBoundingClientRect();
+      const x = r.left + r.width / 2;
+      const y = r.top + r.height / 2;
+      ["mousedown", "mouseup", "click"].forEach((t) => {
+        (document.elementFromPoint(x, y) || el).dispatchEvent(
+          new MouseEvent(t, { bubbles: true, cancelable: true, clientX: x, clientY: y, view: window })
+        );
+      });
+      el.focus();
+      
+      // Xóa nội dung cũ nếu có (dùng beforeinput deleteContentBackward)
+      const hasContent = el.innerText.trim().length > 0 || 
+        [...el.querySelectorAll("[data-slate-string]")].some(s => s.textContent.trim().length > 0);
+      if (hasContent) {
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        sel.addRange(range);
+        el.dispatchEvent(
+          new InputEvent("beforeinput", {
+            inputType: "deleteContentBackward",
+            bubbles: true,
+            cancelable: true,
+            composed: true,
+          })
+        );
+      }
+      
+      // Chèn text mới bằng beforeinput insertText
+      el.dispatchEvent(
+        new InputEvent("beforeinput", {
+          inputType: "insertText",
+          data: text,
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+        })
+      );
+      sendDebugLog("Đã điền bằng beforeinput/slateInsert (Cách 1).");
+      
+      // Kiểm tra xem Slate đã nhận chưa
+      const check = inputText(el).trim();
+      if (check.length >= 3) {
+        sendDebugLog(`✅ Slate đã nhận text (${check.length} ký tự).`);
+        return;
+      }
+      sendDebugLog(`beforeinput chưa đủ (${check.length} ký tự), thử execCommand...`);
+    } catch (e) {
+      sendDebugLog(`Lỗi slateInsert: ${e.message}`, "warning");
+    }
+    
+    // === Cách 2: execCommand fallback ===
+    try {
+      el.focus();
       const selection = window.getSelection();
       const range = document.createRange();
       range.selectNodeContents(el);
@@ -187,14 +243,14 @@ function setPromptText(el, text) {
       
       el.dispatchEvent(new Event('input', { bubbles: true }));
       el.dispatchEvent(new Event('change', { bubbles: true }));
-      sendDebugLog("Đã điền bằng execCommand (Slate/CE).");
+      sendDebugLog("Đã điền bằng execCommand (Cách 2 fallback).");
       return;
     } catch (e) {
       sendDebugLog(`Lỗi execCommand: ${e.message}`, "warning");
     }
   }
   
-  // Input/Textarea: dùng native value setter (đúng cách h2dev_flow)
+  // Input/Textarea: dùng native value setter
   const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
   const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
   if (setter) setter.call(el, text);
