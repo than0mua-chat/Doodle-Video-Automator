@@ -208,12 +208,29 @@ function escapeHtml(s) {
 // ---------- 5. Locate active Flow/ImageFX tab ----------
 async function getFlowTab() {
   const tabs = await chrome.tabs.query({});
-  const tab = tabs.find(t => 
+  
+  const flowTabs = tabs.filter(t => 
     /aitestkitchen\.withgoogle\.com\/tools\/image-fx/i.test(t.url || "") ||
     /labs\.google\/fx\/tools\/flow/i.test(t.url || "") ||
     /labs\.google\/.*\/tools\/flow/i.test(t.url || "")
-  ) || null;
+  );
   
+  if (flowTabs.length === 0) return null;
+  
+  // Sắp xếp ưu tiên:
+  // 1. Tab đang active (hoạt động) được đặt lên đầu
+  // 2. Tab thuộc window hiện tại hoặc đang hiển thị dự án (/project/)
+  flowTabs.sort((a, b) => {
+    if (a.active !== b.active) return a.active ? -1 : 1;
+    
+    const aIsProject = (a.url || "").includes('/project/');
+    const bIsProject = (b.url || "").includes('/project/');
+    if (aIsProject !== bIsProject) return aIsProject ? -1 : 1;
+    
+    return 0;
+  });
+  
+  const tab = flowTabs[0];
   if (tab && tab.url && /labs\.google/i.test(tab.url) && !tab.url.includes('/project/')) {
     tab.__isFlowHomepage = true;
   }
