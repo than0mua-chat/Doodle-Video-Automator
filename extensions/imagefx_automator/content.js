@@ -238,6 +238,13 @@ function setPromptText(el, text) {
         const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
         if (setter) setter.call(el, text);
         else el.value = text;
+        
+        // React 16+ Value Tracker Bypass
+        const tracker = el._valueTracker;
+        if (tracker) {
+          tracker.setValue('');
+          sendDebugLog("Đã bypass React _valueTracker.");
+        }
       }
       el.dispatchEvent(new Event('input', { bubbles: true }));
       el.dispatchEvent(new Event('change', { bubbles: true }));
