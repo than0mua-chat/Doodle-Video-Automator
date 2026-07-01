@@ -288,9 +288,17 @@ function dataURLToBlob(dataURL) {
 }
 
 // ---------- 6. Upload generated images back to Dashboard ----------
-async function uploadImageToServer(imgDataUrl, project_name, index, version = null) {
+async function uploadImageToServer(imgUrl, project_name, index, version = null) {
   try {
-    const blob = dataURLToBlob(imgDataUrl);
+    let blob;
+    if (imgUrl.startsWith("data:")) {
+      blob = dataURLToBlob(imgUrl);
+    } else {
+      // It's a normal URL, fetch the image directly
+      const imgRes = await fetch(imgUrl);
+      blob = await imgRes.blob();
+    }
+    
     const formData = new FormData();
     const filename = version !== null ? `${index}_v${version}.png` : `${index}.png`;
     formData.append('file', blob, filename);
