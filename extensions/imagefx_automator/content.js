@@ -108,8 +108,11 @@ async function wakePromptBox() {
 }
 
 function setPromptText(el, text) {
+  // Focus ô nhập trước
+  try { el.focus?.(); } catch (_) {}
+  
+  // Cách 1: execCommand (chuẩn cho contenteditable)
   if (el.isContentEditable || el.getAttribute("data-slate-editor") === "true") {
-    el.focus();
     try {
       const selection = window.getSelection();
       const range = document.createRange();
@@ -119,20 +122,45 @@ function setPromptText(el, text) {
       
       document.execCommand('delete', false);
       document.execCommand('insertText', false, text);
-      
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-      el.dispatchEvent(new Event('change', { bubbles: true }));
-      return;
     } catch (e) {
-      console.error("Lỗi khi điền Slate Editor bằng execCommand:", e);
+      console.warn("Lỗi execCommand:", e);
     }
   }
-  const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-  const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
-  if (setter) setter.call(el, text);
-  else el.value = text;
-  el.dispatchEvent(new InputEvent("input", { bubbles: true, composed: true, data: text, inputType: "insertText" }));
-  el.dispatchEvent(new Event("change", { bubbles: true }));
+  
+  // Cách 2: Nếu chưa nhận chữ, thử dùng beforeinput event (cách của Slate.js)
+  if (inputText(el).trim().length < 3) {
+    try {
+      el.dispatchEvent(new InputEvent("beforeinput", {
+        inputType: "deleteContentBackward",
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+      }));
+      el.dispatchEvent(new InputEvent("beforeinput", {
+        inputType: "insertText",
+        data: text,
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+      }));
+    } catch (e) {
+      console.warn("Lỗi beforeinput event:", e);
+    }
+  }
+  
+  // Cách 3: Nếu vẫn chưa nhận chữ, gán trực tiếp innerText/value và dispatch events
+  if (inputText(el).trim().length < 3) {
+    if (el.isContentEditable) {
+      el.innerText = text;
+    } else {
+      const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+      if (setter) setter.call(el, text);
+      else el.value = text;
+    }
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  }
 }
 
 function inputText(el) {
@@ -165,34 +193,85 @@ function clickFully(el) {
   el.click?.();
 }
 
-function clickGenerateButton() {
-  const buttons = Array.from(document.querySelectorAll('button'));
-  
-  let generateBtn = buttons.find(b => b.innerHTML.includes('arrow_forward') || b.querySelector('svg[data-icon="arrow-forward"]'));
+function findGenerateButton(input) {
+  const buttons = [...document.querySelectorAll('button, [role="button"]')].filter(
+    (b) => isVisible(b) && !b.disabled && b.getAttribute("aria-disabled") !== "true"
+  );
 
-  if (!generateBtn) {
-    generateBtn = buttons.find(b => {
-      const txt = (b.textContent || b.innerText || "").trim().toLowerCase();
-      return txt === 'generate' || txt === 'tạo';
+  // 1) Ưu tiên tuyệt đối: nút mũi tên gửi của Flow (icon "arrow_forward")
+  let b = buttons.find((x) => x.innerHTML.includes('arrow_forward') || x.querySelector('svg[data-icon="arrow-forward"]'));
+  if (b) return b;
+
+  // 2) Tìm nút chứa chữ "Generate" (tiếng Anh) hoặc "Tạo"
+  b = buttons.find((x) => {
+    const txt = (x.textContent || x.innerText || "").toLowerCase();
+    return txt.includes("generate");
+  });
+  if (b) return b;
+
+  // 3) Tìm nút chứa chữ "Tạo" nhưng không có icon "add"
+  b = buttons.find((x) => {
+    const txt = (x.textContent || x.innerText || "").toLowerCase();
+    const hasTao = txt.includes("tạo");
+    const hasAddIcon = x.innerHTML.includes("add") || x.innerHTML.includes("add_2");
+    return hasTao && !hasAddIcon;
+  });
+  if (b) return b;
+
+  const label = (b) =>
+    (
+      (b.getAttribute("aria-label") || "") +
+      " " +
+      (b.title || "") +
+      " " +
+      b.textContent
+    ).toLowerCase();
+
+  const bad = /agent|tác nhân|delete|close|xoá|xóa|trash|thùng|panel|banana|model|setting/i;
+  const wanted = /submit|send|run|gửi|送信|生成|→|paper.?plane/i;
+  b = buttons.find((x) => wanted.test(label(x)) && !bad.test(label(x)));
+  if (b) return b;
+
+  if (input) {
+    const ir = input.getBoundingClientRect();
+    const near = buttons
+      .filter((x) => !bad.test(label(x)))
+      .map((x) => {
+        const r = x.getBoundingClientRect();
+        const dx = r.left - ir.right;
+        const dy = r.top - ir.top;
+        return { x, d: Math.hypot(dx, dy) };
+      })
+      .filter((o) => o.d < 600)
+      .sort((a, b) => a.d - b.d);
+    if (near[0]) return near[0].x;
+  }
+  return null;
+}
+
+function pressEnter(el) {
+  try { el.focus(); } catch (_) {}
+  for (const type of ["keydown", "keypress", "keyup"]) {
+    const ev = new KeyboardEvent(type, {
+      key: "Enter",
+      code: "Enter",
+      bubbles: true,
+      cancelable: true,
+      composed: true,
     });
+    Object.defineProperty(ev, "keyCode", { get: () => 13 });
+    Object.defineProperty(ev, "which", { get: () => 13 });
+    el.dispatchEvent(ev);
   }
+}
 
-  if (!generateBtn) {
-    generateBtn = buttons.find(b => 
-      b.innerHTML.includes('send') || 
-      b.className.includes('send') || 
-      b.className.includes('submit') || 
-      b.getAttribute('aria-label') === 'Generate' ||
-      b.getAttribute('aria-label') === 'Tạo'
-    );
-  }
-
-  if (generateBtn) {
-    generateBtn.click();
-    console.log("Đã click nút Generate/Tạo!");
+function clickGenerateButton(input) {
+  const btn = findGenerateButton(input);
+  if (btn) {
+    clickFully(btn);
+    console.log("Đã click nút Generate/Tạo:", btn);
     return true;
   }
-  
   return false;
 }
 
@@ -263,33 +342,55 @@ if (!window.__DVA_LISTENER_REGISTERED__) {
           // 2. Tìm và đánh thức ô nhập liệu
           let input = await wakePromptBox();
           if (!input) {
-            sendResponse({ ok: false, error: "Không tìm thấy ô prompt." });
+            sendResponse({ ok: false, error: "Không tìm thấy ô prompt trên trang." });
             return;
           }
           
-          // 3. Focus và điền prompt bằng kỹ thuật execCommand
+          // 3. Focus và điền prompt
           clickFully(input);
           input.focus();
-          await sleep(150);
+          await sleep(250);
           
           setPromptText(input, msg.prompt);
-          // Đợi 1.5 giây để React đồng bộ
-          await sleep(1500);
+          await sleep(1000); // Chờ React đồng bộ hóa trạng thái
+          
+          // Kiểm tra xem chữ đã thực sự được gõ vào chưa
+          const got = inputText(input).trim();
+          console.log(`[Task #${msg.index}] Nội dung ô prompt sau khi gõ: "${got.slice(0, 60)}..." (Độ dài: ${got.length})`);
+          
+          if (got.length < 3) {
+            sendResponse({ ok: false, error: "Lỗi: Không thể điền văn bản vào ô prompt (Slate Editor không nhận ký tự)." });
+            return;
+          }
           
           // 4. Bấm nút Tạo / Gửi
-          const clicked = clickGenerateButton();
+          const clicked = clickGenerateButton(input);
           if (clicked) {
-            sendResponse({ ok: true });
+            // Chờ một chút xem ô prompt có được xóa trống không (dấu hiệu submit thành công)
+            await sleep(800);
+            const afterClickText = inputText(input).trim();
+            if (afterClickText.length < 3) {
+              sendResponse({ ok: true, note: "Click nút Generate thành công." });
+              return;
+            }
+          }
+          
+          // Nếu click nút không được hoặc không xóa trống, thử Enter dự phòng
+          console.log(`[Task #${msg.index}] Nút click thất bại hoặc không gửi được. Thử gửi bằng phím Enter...`);
+          pressEnter(input);
+          await sleep(1000);
+          
+          const afterEnterText = inputText(input).trim();
+          if (afterEnterText.length < 3) {
+            sendResponse({ ok: true, note: "Submit bằng phím Enter dự phòng thành công." });
           } else {
-            // Thử Enter dự phòng
-            const ev = new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true, cancelable: true });
-            Object.defineProperty(ev, "keyCode", { get: () => 13 });
-            Object.defineProperty(ev, "which", { get: () => 13 });
-            input.dispatchEvent(ev);
-            sendResponse({ ok: true, note: "Submit bằng phím Enter dự phòng" });
+            sendResponse({ 
+              ok: false, 
+              error: "Không thể gửi prompt. Đã click nút Tạo và nhấn Enter nhưng nội dung văn bản vẫn còn trong ô nhập liệu." 
+            });
           }
         } catch (e) {
-          sendResponse({ ok: false, error: String(e) });
+          sendResponse({ ok: false, error: "Lỗi ngoại lệ trong content script: " + String(e) });
         }
       })();
       return true; // asynchronous response
