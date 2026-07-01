@@ -29,7 +29,7 @@
   "content_scripts": [
     {
       "matches": [
-        "https://aitestkitchen.withgoogle.com/tools/image-fx*",
+        "https://aitestkitchen.withgoogle.com/*",
         "https://labs.google/*",
         "https://*.labs.google/*",
         "https://aistudio.google.com/*",

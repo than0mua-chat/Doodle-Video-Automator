@@ -217,9 +217,37 @@ async function getFlowTab() {
 
 function sendToTab(tabId, msg) {
   return new Promise((resolve) => {
-    chrome.tabs.sendMessage(tabId, msg, (resp) => {
-      if (chrome.runtime.lastError) resolve(null);
-      else resolve(resp);
+    chrome.tabs.sendMessage(tabId, msg, async (resp) => {
+      if (chrome.runtime.lastError) {
+        console.warn("Lỗi sendMessage, có thể content script chưa được inject. Đang tiến hành tự động inject...");
+        try {
+          // Tự động inject content.js và style.css
+          await chrome.scripting.executeScript({
+            target: { tabId: tabId },
+            files: ["content.js"]
+          });
+          try {
+            await chrome.scripting.insertCSS({
+              target: { tabId: tabId },
+              files: ["style.css"]
+            });
+          } catch (_) {}
+          
+          // Đợi 500ms để script khởi chạy xong và lắng nghe
+          await sleep(500);
+          
+          // Thử gửi lại lần 2
+          chrome.tabs.sendMessage(tabId, msg, (resp2) => {
+            if (chrome.runtime.lastError) resolve(null);
+            else resolve(resp2);
+          });
+        } catch (injectErr) {
+          console.error("Không thể tự động inject content script:", injectErr);
+          resolve(null);
+        }
+      } else {
+        resolve(resp);
+      }
     });
   });
 }
