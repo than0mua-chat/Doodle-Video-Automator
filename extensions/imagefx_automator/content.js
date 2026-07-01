@@ -10,6 +10,15 @@ let dashboardUrl = "http://127.0.0.1:8085";
 // ---------- A. Helpers for ImageFX / Google Flow ----------
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+function sendDebugLog(text, type = "info") {
+  try {
+    chrome.runtime.sendMessage({ type: "DEBUG_LOG", text: text, logType: type }, () => {
+      if (chrome.runtime.lastError) {}
+    });
+  } catch (_) {}
+  console.log(`[DVA Debug] ${text}`);
+}
+
 function isVisible(el) {
   if (!el) return false;
   const r = el.getBoundingClientRect();
@@ -34,7 +43,7 @@ function isShown(el) {
 }
 
 function findPromptInput() {
-  // 1. Thu thập tất cả các phần tử có khả năng là ô nhập liệu
+  sendDebugLog("Đang quét tìm ô nhập prompt...");
   const selectors = [
     'textarea',
     '[data-slate-editor="true"]',
@@ -48,8 +57,10 @@ function findPromptInput() {
   let candidates = [];
   for (const sel of selectors) {
     const elements = Array.from(document.querySelectorAll(sel));
+    if (elements.length > 0) {
+      sendDebugLog(`Selector "${sel}" tìm thấy ${elements.length} phần tử.`);
+    }
     for (const el of elements) {
-      // Bỏ qua các phần tử thuộc automator panels
       if (el.closest('.automator-panel') || el.closest('#imagefx-automator-panel') || el.closest('#aistudio-automator-panel')) {
         continue;
       }
@@ -59,10 +70,21 @@ function findPromptInput() {
     }
   }
   
-  if (candidates.length === 0) return null;
+  sendDebugLog(`Tổng số ứng viên nhập liệu sau khi loại trừ automator panels: ${candidates.length}`);
   
-  // 2. Tìm kiếm theo mức độ ưu tiên:
-  // Ưu tiên 1: Có placeholder hoặc aria-label chứa các từ khóa liên quan đến sinh ảnh
+  if (candidates.length === 0) {
+    sendDebugLog("❌ Không tìm thấy ứng viên nhập liệu nào!", "error");
+    return null;
+  }
+  
+  candidates.forEach((el, idx) => {
+    const tag = el.tagName;
+    const placeholder = el.getAttribute("placeholder") || el.dataset?.placeholder || "";
+    const ariaLabel = el.getAttribute("aria-label") || "";
+    const isCE = el.isContentEditable;
+    sendDebugLog(`Ứng viên #${idx}: TAG=${tag}, isCE=${isCE}, placeholder="${placeholder}", aria-label="${ariaLabel}"`);
+  });
+  
   const hint = /prompt|imagine|describe|create|write|tạo|nhập|lời nhắc|mô tả|sinh|生成|描述/i;
   const bestMatch = candidates.find(el => {
     const attrs = [
@@ -74,22 +96,31 @@ function findPromptInput() {
     ].filter(Boolean).join(" ").toLowerCase();
     return hint.test(attrs);
   });
-  if (bestMatch) return bestMatch;
+  if (bestMatch) {
+    sendDebugLog(`✅ Khớp Ưu tiên 1 (Hint Regex): TAG=${bestMatch.tagName}, placeholder="${bestMatch.getAttribute("placeholder") || bestMatch.dataset?.placeholder || ""}"`);
+    return bestMatch;
+  }
   
-  // Ưu tiên 2: Thẻ textarea hiển thị
   const visibleTextarea = candidates.find(el => el.tagName === "TEXTAREA" && isShown(el));
-  if (visibleTextarea) return visibleTextarea;
+  if (visibleTextarea) {
+    sendDebugLog("✅ Khớp Ưu tiên 2 (TEXTAREA visible)");
+    return visibleTextarea;
+  }
   
-  // Ưu tiên 3: Phần tử contenteditable hiển thị
   const visibleEditable = candidates.find(el => (el.isContentEditable || el.getAttribute("contenteditable") !== null) && isShown(el));
-  if (visibleEditable) return visibleEditable;
+  if (visibleEditable) {
+    sendDebugLog("✅ Khớp Ưu tiên 3 (contenteditable visible)");
+    return visibleEditable;
+  }
   
-  // Ưu tiên 4: Thẻ textarea bất kỳ
   const anyTextarea = candidates.find(el => el.tagName === "TEXTAREA");
-  if (anyTextarea) return anyTextarea;
+  if (anyTextarea) {
+    sendDebugLog("✅ Khớp Ưu tiên 4 (textarea bất kỳ)");
+    return anyTextarea;
+  }
   
-  // Ưu tiên 5: Phần tử lớn nhất
   candidates.sort((a, b) => area(b) - area(a));
+  sendDebugLog(`✅ Khớp Ưu tiên 5 (Diện tích lớn nhất): TAG=${candidates[0].tagName}`);
   return candidates[0];
 }
 
@@ -105,7 +136,6 @@ async function wakePromptBox() {
     (b) => /arrow_forward/i.test((b.getAttribute("aria-label") || "") + b.textContent)
   );
   if (!arrow) {
-    // Dự phòng tìm nút Generate/Tạo trên ImageFX
     arrow = findGenerateButton(null);
   }
   if (arrow) {
@@ -139,63 +169,85 @@ async function wakePromptBox() {
 }
 
 function setPromptText(el, text) {
-  // Focus và click vào giữa editor để Slate khởi tạo Selection Model
+  sendDebugLog(`Bắt đầu điền prompt. Độ dài text: ${text.length}`);
+  
   try {
     const r = el.getBoundingClientRect();
     const x = r.left + r.width / 2;
     const y = r.top + r.height / 2;
+    sendDebugLog(`Giả lập click tọa độ trung tâm (${x.toFixed(1)}, ${y.toFixed(1)}) để Slate/React nhận diện`);
     ["mousedown", "mouseup", "click"].forEach((t) => {
       (document.elementFromPoint(x, y) || el).dispatchEvent(
         new MouseEvent(t, { bubbles: true, cancelable: true, clientX: x, clientY: y, view: window })
       );
     });
     el.focus?.();
-  } catch (_) {}
+    sendDebugLog("Đã gọi el.focus()");
+  } catch (e) {
+    sendDebugLog(`Lỗi click/focus: ${e.message}`, "error");
+  }
   
-  // Cách 1: execCommand với selectAll để bảo tồn DOM tree của Slate
   if (el.isContentEditable || el.getAttribute("data-slate-editor") === "true") {
+    sendDebugLog("Định dạng: ContentEditable / Slate editor");
     try {
-      document.execCommand('selectAll', false);
-      document.execCommand('insertText', false, text);
+      sendDebugLog("Thử cách 1: execCommand selectAll + insertText");
+      const s1 = document.execCommand('selectAll', false);
+      const s2 = document.execCommand('insertText', false, text);
+      sendDebugLog(`Kết quả execCommand: selectAll=${s1}, insertText=${s2}`);
     } catch (e) {
-      console.warn("Lỗi execCommand:", e);
+      sendDebugLog(`Lỗi execCommand: ${e.message}`, "warning");
     }
   }
   
-  // Cách 2: Nếu chưa nhận chữ, thử dùng beforeinput event (cách của Slate.js)
-  if (inputText(el).trim().length < 3) {
+  const textLen = inputText(el).trim().length;
+  sendDebugLog(`Độ dài chữ sau cách 1: ${textLen}`);
+  
+  if (textLen < 3) {
+    sendDebugLog("Thử cách 2: Dispatch beforeinput event");
     try {
-      el.dispatchEvent(new InputEvent("beforeinput", {
+      const e1 = el.dispatchEvent(new InputEvent("beforeinput", {
         inputType: "deleteContentBackward",
         bubbles: true,
         cancelable: true,
         composed: true,
       }));
-      el.dispatchEvent(new InputEvent("beforeinput", {
+      const e2 = el.dispatchEvent(new InputEvent("beforeinput", {
         inputType: "insertText",
         data: text,
         bubbles: true,
         cancelable: true,
         composed: true,
       }));
+      sendDebugLog(`Kết quả dispatch beforeinput: delete=${e1}, insert=${e2}`);
     } catch (e) {
-      console.warn("Lỗi beforeinput event:", e);
+      sendDebugLog(`Lỗi beforeinput: ${e.message}`, "warning");
     }
   }
   
-  // Cách 3: Nếu vẫn chưa nhận chữ, gán trực tiếp innerText/value và dispatch events
-  if (inputText(el).trim().length < 3) {
-    if (el.isContentEditable) {
-      el.innerText = text;
-    } else {
-      const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-      const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
-      if (setter) setter.call(el, text);
-      else el.value = text;
+  const textLen2 = inputText(el).trim().length;
+  sendDebugLog(`Độ dài chữ sau cách 2: ${textLen2}`);
+  
+  if (textLen2 < 3) {
+    sendDebugLog("Thử cách 3: Gán innerText/value trực tiếp");
+    try {
+      if (el.isContentEditable) {
+        el.innerText = text;
+      } else {
+        const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+        const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+        if (setter) setter.call(el, text);
+        else el.value = text;
+      }
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      sendDebugLog("Đã gán trực tiếp và dispatch input/change");
+    } catch (e) {
+      sendDebugLog(`Lỗi gán trực tiếp: ${e.message}`, "error");
     }
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-    el.dispatchEvent(new Event('change', { bubbles: true }));
   }
+  
+  const finalLen = inputText(el).trim().length;
+  sendDebugLog(`Độ dài chữ cuối cùng trong ô prompt: ${finalLen}`);
 }
 
 function inputText(el) {
@@ -229,20 +281,34 @@ function clickFully(el) {
 }
 
 function findGenerateButton(input) {
+  sendDebugLog("Đang quét các nút Generate/Tạo trên trang...");
   const buttons = [...document.querySelectorAll('button, [role="button"]')].filter(
     (b) => isVisible(b) && !b.disabled && b.getAttribute("aria-disabled") !== "true"
   );
+  
+  sendDebugLog(`Tìm thấy ${buttons.length} nút đang hiển thị và không disabled.`);
+  buttons.forEach((btn, idx) => {
+    const text = btn.textContent.trim() || btn.innerText.trim() || "";
+    const aria = btn.getAttribute("aria-label") || "";
+    sendDebugLog(`Nút #${idx}: TAG=${btn.tagName}, Text="${text}", aria-label="${aria}"`);
+  });
 
   // 1) Ưu tiên tuyệt đối: nút mũi tên gửi của Flow (icon "arrow_forward")
   let b = buttons.find((x) => x.innerHTML.includes('arrow_forward') || x.querySelector('svg[data-icon="arrow-forward"]'));
-  if (b) return b;
+  if (b) {
+    sendDebugLog(`✅ Khớp nút (arrow_forward): TAG=${b.tagName}`);
+    return b;
+  }
 
   // 2) Tìm nút chứa chữ "Generate" (tiếng Anh) hoặc "Tạo"
   b = buttons.find((x) => {
     const txt = (x.textContent || x.innerText || "").toLowerCase();
     return txt.includes("generate");
   });
-  if (b) return b;
+  if (b) {
+    sendDebugLog(`✅ Khớp nút (chữ 'generate'): TAG=${b.tagName}`);
+    return b;
+  }
 
   // 3) Tìm nút chứa chữ "Tạo" nhưng không có icon "add"
   b = buttons.find((x) => {
@@ -251,7 +317,10 @@ function findGenerateButton(input) {
     const hasAddIcon = x.innerHTML.includes("add") || x.innerHTML.includes("add_2");
     return hasTao && !hasAddIcon;
   });
-  if (b) return b;
+  if (b) {
+    sendDebugLog(`✅ Khớp nút (chữ 'tạo'): TAG=${b.tagName}`);
+    return b;
+  }
 
   const label = (b) =>
     (
@@ -265,7 +334,10 @@ function findGenerateButton(input) {
   const bad = /agent|tác nhân|delete|close|xoá|xóa|trash|thùng|panel|banana|model|setting/i;
   const wanted = /submit|send|run|gửi|送信|生成|→|paper.?plane/i;
   b = buttons.find((x) => wanted.test(label(x)) && !bad.test(label(x)));
-  if (b) return b;
+  if (b) {
+    sendDebugLog(`✅ Khớp nút (từ khóa wanted): TAG=${b.tagName}`);
+    return b;
+  }
 
   if (input) {
     const ir = input.getBoundingClientRect();
@@ -279,12 +351,18 @@ function findGenerateButton(input) {
       })
       .filter((o) => o.d < 600)
       .sort((a, b) => a.d - b.d);
-    if (near[0]) return near[0].x;
+    if (near[0]) {
+      sendDebugLog(`✅ Khớp nút (gần ô prompt nhất): TAG=${near[0].x.tagName}`);
+      return near[0].x;
+    }
   }
+  
+  sendDebugLog("❌ Không tìm thấy nút Generate/Tạo phù hợp!", "warning");
   return null;
 }
 
 function pressEnter(el) {
+  sendDebugLog("Đang giả lập nhấn Enter...");
   try { el.focus(); } catch (_) {}
   for (const type of ["keydown", "keypress", "keyup"]) {
     const ev = new KeyboardEvent(type, {
@@ -304,7 +382,7 @@ function clickGenerateButton(input) {
   const btn = findGenerateButton(input);
   if (btn) {
     clickFully(btn);
-    console.log("Đã click nút Generate/Tạo:", btn);
+    sendDebugLog(`Đã click nút Generate/Tạo: TAG=${btn.tagName}, Text="${btn.textContent.trim()}"`);
     return true;
   }
   return false;

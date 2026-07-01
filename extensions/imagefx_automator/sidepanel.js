@@ -642,3 +642,12 @@ loadSettings().then(() => {
   periodicCheck();
   setInterval(periodicCheck, 4000);
 });
+
+// ---------- 12. Debug Log Listener ----------
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg && msg.type === "DEBUG_LOG") {
+    log(`[Tab Debug] ${msg.text}`, msg.logType || "info");
+    sendResponse({ ok: true });
+    return true;
+  }
+});
